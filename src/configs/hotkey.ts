@@ -1,0 +1,150 @@
+export const enum KEYS {
+  C = 'C',
+  X = 'X',
+  Z = 'Z',
+  Y = 'Y',
+  A = 'A',
+  G = 'G',
+  L = 'L',
+  F = 'F',
+  D = 'D',
+  B = 'B',
+  P = 'P',
+  O = 'O',
+  R = 'R',
+  T = 'T',
+  MINUS = '-',
+  EQUAL = '=',
+  DIGIT_0 = '0',
+  DELETE = 'DELETE',
+  UP = 'ARROWUP',
+  DOWN = 'ARROWDOWN',
+  LEFT = 'ARROWLEFT',
+  RIGHT = 'ARROWRIGHT',
+  ENTER = 'ENTER',
+  SPACE = ' ',
+  TAB = 'TAB',
+  BACKSPACE = 'BACKSPACE',
+  ESC = 'ESCAPE',
+  PAGEUP = 'PAGEUP',
+  PAGEDOWN = 'PAGEDOWN',
+  F5 = 'F5',
+}
+
+interface HotkeyItem {
+  type: string
+  children: {
+    label: string
+    value?: string
+  }[] 
+}
+
+export const HOTKEY_DOC: HotkeyItem[] = [
+  {
+    type: 'General',
+    children: [
+      { label: 'Cut', value: 'Ctrl + X' },
+      { label: 'Copy', value: 'Ctrl + C' },
+      { label: 'Paste', value: 'Ctrl + V' },
+      { label: 'Paste Plain Text', value: 'Ctrl + Shift + V' },
+      { label: 'Duplicate', value: 'Ctrl + D' },
+      { label: 'Select All', value: 'Ctrl + A' },
+      { label: 'Undo', value: 'Ctrl + Z' },
+      { label: 'Redo', value: 'Ctrl + Y' },
+      { label: 'Delete', value: 'Delete / Backspace' },
+      { label: 'Multi-select', value: 'Hold Ctrl or Shift' },
+      { label: 'Find / Replace', value: 'Ctrl + F' },
+      { label: 'Print', value: 'Ctrl + P' },
+      { label: 'Close Dialog', value: 'ESC' },
+    ],
+  },
+  {
+    type: 'Slide Show',
+    children: [
+      { label: 'Start from Beginning', value: 'F5' },
+      { label: 'Start from Current Slide', value: 'Shift + F5' },
+      { label: 'Previous Slide', value: '↑ / ← / PgUp' },
+      { label: 'Next Slide', value: '↓ / → / PgDown' },
+      { label: 'Next Slide', value: 'Enter / Space' },
+      { label: 'Exit Show', value: 'ESC' },
+    ],
+  },
+  {
+    type: 'Slide Editing',
+    children: [
+      { label: 'New Slide', value: 'Enter' },
+      { label: 'Pan Canvas', value: 'Space + Drag' },
+      { label: 'Zoom Canvas', value: 'Ctrl + Wheel' },
+      { label: 'Zoom In', value: 'Ctrl + =' },
+      { label: 'Zoom Out', value: 'Ctrl + -' },
+      { label: 'Fit to Screen', value: 'Ctrl + 0' },
+      { label: 'Previous Slide (unfocused)', value: '↑' },
+      { label: 'Next Slide (unfocused)', value: '↓' },
+      { label: 'Previous Slide', value: 'Scroll Up / PgUp' },
+      { label: 'Next Slide', value: 'Scroll Down / PgDown' },
+      { label: 'Quick Create Text', value: 'Double Click / T' },
+      { label: 'Quick Create Rectangle', value: 'R' },
+      { label: 'Quick Create Circle', value: 'O' },
+      { label: 'Quick Create Line', value: 'L' },
+      { label: 'Cancel Drawing', value: 'Right Click' },
+    ],
+  },
+  {
+    type: 'Element Operations',
+    children: [
+      { label: 'Move', value: '↑ / ← / ↓ / →' },
+      { label: 'Lock', value: 'Ctrl + L' },
+      { label: 'Group', value: 'Ctrl + G' },
+      { label: 'Ungroup', value: 'Ctrl + Shift + G' },
+      { label: 'Bring to Front', value: 'Alt + F' },
+      { label: 'Send to Back', value: 'Alt + B' },
+      { label: 'Lock Aspect Ratio', value: 'Hold Ctrl or Shift' },
+      { label: 'Quick Duplicate', value: 'Hold Ctrl + Drag' },
+      { label: 'Straight Line', value: 'Hold Ctrl or Shift' },
+      { label: 'Switch Focused Element', value: 'Tab' },
+      { label: 'Confirm Crop', value: 'Enter' },
+      { label: 'Complete Custom Shape', value: 'Enter' },
+    ],
+  },
+  {
+    type: 'Table Editing',
+    children: [
+      { label: 'Focus Next Cell', value: 'Tab' },
+      { label: 'Navigate Cells', value: '↑ / ← / ↓ / →' },
+      { label: 'Insert Row Above', value: 'Ctrl + ↑' },
+      { label: 'Insert Row Below', value: 'Ctrl + ↓' },
+      { label: 'Insert Column Left', value: 'Ctrl + ←' },
+      { label: 'Insert Column Right', value: 'Ctrl + →' },
+    ],
+  },
+  {
+    type: 'Chart Data Editing',
+    children: [
+      { label: 'Focus Next Row', value: 'Enter' },
+    ],
+  },
+  {
+    type: 'Text Editing',
+    children: [
+      { label: 'Bold', value: 'Ctrl + B' },
+      { label: 'Italic', value: 'Ctrl + I' },
+      { label: 'Underline', value: 'Ctrl + U' },
+      { label: 'Inline Code', value: 'Ctrl + E' },
+      { label: 'Superscript', value: 'Ctrl + ;' },
+      { label: 'Subscript', value: `Ctrl + '` },
+      { label: 'Select Paragraph', value: `ESC` },
+    ],
+  },
+  {
+    type: 'Other Operations',
+    children: [
+      { label: 'Add Image - Paste from clipboard' },
+      { label: 'Add Image - Drag and drop local image' },
+      { label: 'Add Image - Paste SVG code into canvas' },
+      { label: 'Add Image - Paste image URL' },
+      { label: 'Add Text - Paste text from clipboard' },
+      { label: 'Add Text - Drag selected text into canvas' },
+      { label: 'Text Editing - Supports markdown lists and quotes' },
+    ],
+  },
+]
