@@ -24,12 +24,15 @@ export interface SerializedElement {
   top: number
   content?: string         // First 60 chars of text content, if text element
   fill?: string            // Fill color, if present
+  defaultColor?: string    // Default text color, if text element
+  defaultFontName?: string // Font family name, if text element
+  defaultSize?: string     // Font size, if text element
 }
 
 export interface SerializedSlide {
   id: string
-  elementCount: number
-  elementTypes: Record<string, number>  // e.g. { text: 2, shape: 3 }
+  background?: string
+  elements: SerializedElement[]
 }
 
 export interface SerializedAction {

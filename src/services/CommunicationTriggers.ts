@@ -45,13 +45,19 @@ export class CommunicationTriggers {
     if (this.unsubscribeMain) this.unsubscribeMain()
   }
 
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null
+
   /**
    * The central trigger function called by the watcher
    */
   private triggerFunction(actionName: string) {
-    // Using a microtask is near-instant and much more efficient than setTimeout.
-    // It guarantees actionHistory is fully updated first without delaying execution to the macrotask queue.
-    Promise.resolve().then(() => {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+    }
+
+    // Debounce for 1.5 seconds. This prevents spamming the LLM
+    // when the user is continuously dragging or resizing an element.
+    this.debounceTimer = setTimeout(() => {
       const slidesStore = useSlidesStore()
       const mainStore = useMainStore()
   
@@ -76,9 +82,7 @@ export class CommunicationTriggers {
       
       // Send to the MCP Bridge server
       this.sendToMCPBridge(mcpPayload)
-    }).catch(err => {
-      console.error('[CommunicationTriggers] Error in trigger promise:', err)
-    })
+    }, 1500)
   }
 
   /**
@@ -109,6 +113,8 @@ export class CommunicationTriggers {
       ...(el.fill ? { fill: el.fill } : {}),
       ...(el.type === 'text' ? { 
         defaultColor: el.defaultColor,
+        defaultFontName: el.defaultFontName,
+        defaultSize: el.defaultSize,
         content: String(el.content).replace(/<[^>]*>/g, '').slice(0, 40)
       } : {}),
     }))

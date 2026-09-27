@@ -22,6 +22,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { getLatestPayload, getStoreStatus, updatePredictions, clearPredictions } from './stateStore.js'
+import { analyzeContext } from './analyzers.js'
 
 const LIVE_CONTEXT_URI = 'pptist://context/live'
 
@@ -67,6 +68,8 @@ export function createMcpServer(): McpServer {
         }
       }
 
+      const insights = analyzeContext(payload)
+
       return {
         contents: [{
           uri: LIVE_CONTEXT_URI,
@@ -76,6 +79,7 @@ export function createMcpServer(): McpServer {
             currentSelection: payload.currentSelection,
             currentSlide: payload.currentSlide,
             recentActions: payload.last5Actions,
+            insights,
           }),
         }],
       }
@@ -99,6 +103,8 @@ export function createMcpServer(): McpServer {
         }
       }
 
+      const insights = analyzeContext(payload)
+
       return {
         content: [{
           type: 'text',
@@ -107,6 +113,7 @@ export function createMcpServer(): McpServer {
             currentSelection: payload.currentSelection,
             currentSlide: payload.currentSlide,
             recentActions: payload.last5Actions,
+            insights,
           }, null, 2),
         }],
       }
@@ -163,7 +170,16 @@ EXAMPLES:
           confidence: z.number().min(0).max(1).describe('Confidence score between 0.0 and 1.0'),
           steps: z.array(
             z.object({
-              command: z.string().describe('Action ID or store method name to execute'),
+              command: z.enum([
+                'bold', 'italic', 'underline', 'strikethrough', 'fontSizeUp', 'fontSizeDown', 'changeTextColor',
+                'alignLeft', 'alignCenter', 'alignRight', 'alignTop', 'alignVertical', 'alignBottom',
+                'bringToFront', 'sendToBack', 'bringForward', 'sendBackward',
+                'duplicate', 'deleteEl',
+                'flipHorizontal', 'flipVertical', 'fitToSlide',
+                'editChartData',
+                'insertTableRow', 'insertTableCol', 'deleteTableRow', 'deleteTableCol',
+                'updateElement', 'addElement'
+              ]).describe('Action ID or store method name to execute'),
               args: z.record(z.unknown()).optional().describe('Optional arguments for the command'),
             })
           ).min(1).describe('Sequence of commands to execute when the button is clicked'),
