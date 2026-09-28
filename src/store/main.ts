@@ -6,6 +6,7 @@ import type { DialogForExportTypes } from '@/types/export'
 import { type TextAttrs, defaultRichTextAttrs } from '@/utils/prosemirror/utils'
 
 import { useSlidesStore } from './slides'
+import type { PPTElement } from '@/types/slides'
 
 export interface MainState {
   activeElementIdList: string[]
@@ -42,6 +43,7 @@ export interface MainState {
   showAIPPTDialog: boolean | 'running'
   aiMenuPredictions: string[]   // Top-5 predicted action IDs from the AI menu
   aiMenuLoading: boolean         // True while an AI prediction is in-flight
+  previewElements: PPTElement[]
 }
 
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz')
@@ -83,6 +85,7 @@ export const useMainStore = defineStore('main', {
     showAIPPTDialog: false, // 打开AIPPT创建窗口
     aiMenuPredictions: [], // AI菜单预测的动作ID列表
     aiMenuLoading: false, // AI菜单预测加载状态
+    previewElements: [],
   }),
 
   getters: {
@@ -235,6 +238,10 @@ export const useMainStore = defineStore('main', {
 
     setAiMenuLoading(loading: boolean) {
       this.aiMenuLoading = loading
+    },
+
+    setPreviewElements(elements: PPTElement[]) {
+      this.previewElements = elements
     },
   },
 })

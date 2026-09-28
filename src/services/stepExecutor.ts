@@ -14,6 +14,7 @@ import { useSlidesStore, useMainStore } from '@/store'
 import { ElementAlignCommands, ElementOrderCommands } from '@/types/edit'
 import useOrderElement from '@/hooks/useOrderElement'
 import useAlignElementToCanvas from '@/hooks/useAlignElementToCanvas'
+import useAlignActiveElement from '@/hooks/useAlignActiveElement'
 import useDeleteElement from '@/hooks/useDeleteElement'
 import useAddSlidesOrElements from '@/hooks/useAddSlidesOrElements'
 import emitter, { EmitterEvents } from '@/utils/emitter'
@@ -40,6 +41,7 @@ export function useStepExecutor() {
 
   const { orderElement } = useOrderElement()
   const { alignElementToCanvas } = useAlignElementToCanvas()
+  const { alignActiveElement } = useAlignActiveElement()
   const { deleteElement } = useDeleteElement()
   const { addElementsFromData } = useAddSlidesOrElements()
 
@@ -134,6 +136,28 @@ export function useStepExecutor() {
     },
 
     // ── Store-level operations (with args) ─────────────────────
+    updateTextContent: (args) => {
+      const el = getEl()
+      if (el && el.type === 'text' && args?.text) {
+        slidesStore.updateElement({ id: el.id, props: { content: args.text as string } })
+      }
+    },
+    generateSubtitle: (args) => {
+      if (args?.text) {
+        const subtitleElement = {
+          id: Date.now().toString(),
+          type: 'text',
+          content: args.text as string,
+          left: 100,
+          top: 100,
+          width: 400,
+          height: 50,
+        } as unknown as PPTElement
+        addElementsFromData([subtitleElement])
+      }
+    },
+    alignGroupLeft: () => alignActiveElement(ElementAlignCommands.LEFT),
+
     updateElement: (args) => {
       if (!args) return
       const id = args.id as string

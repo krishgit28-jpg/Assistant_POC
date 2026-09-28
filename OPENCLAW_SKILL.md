@@ -119,11 +119,11 @@ The `command` property is heavily strictly validated by a Zod schema. If you pre
 
 **Allowed Commands:**
 * **Formatting:** `bold`, `italic`, `underline`, `strikethrough`, `fontSizeUp`, `fontSizeDown`, `changeTextColor`
-* **Alignment:** `alignLeft`, `alignCenter`, `alignRight`, `alignTop`, `alignVertical`, `alignBottom`
+* **Alignment:** `alignLeft`, `alignCenter`, `alignRight`, `alignTop`, `alignVertical`, `alignBottom`, `alignGroupLeft`
 * **Layering:** `bringToFront`, `sendToBack`, `bringForward`, `sendBackward`
 * **Operations:** `duplicate`, `deleteEl`, `flipHorizontal`, `flipVertical`, `fitToSlide`
 * **Tables/Charts:** `editChartData`, `insertTableRow`, `insertTableCol`, `deleteTableRow`, `deleteTableCol`
-* **Store Methods (Requires Args):** `updateElement`, `addElement`
+* **Store Methods (Requires Args):** `updateElement`, `addElement`, `updateTextContent`, `generateSubtitle`
 
 > [!WARNING]
 > Do NOT hallucinate commands. Always use `updateElement` with proper args if a specific button command doesn't exist.

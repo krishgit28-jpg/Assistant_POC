@@ -178,7 +178,7 @@ EXAMPLES:
                 'flipHorizontal', 'flipVertical', 'fitToSlide',
                 'editChartData',
                 'insertTableRow', 'insertTableCol', 'deleteTableRow', 'deleteTableCol',
-                'updateElement', 'addElement'
+                'updateElement', 'addElement', 'updateTextContent', 'generateSubtitle', 'alignGroupLeft'
               ]).describe('Action ID or store method name to execute'),
               args: z.record(z.unknown()).optional().describe('Optional arguments for the command'),
             })

@@ -86,6 +86,17 @@
           :openLinkDialog="openLinkDialog"
           v-show="!hiddenElementIdList.includes(element.id)"
         />
+        <div v-if="previewElements && previewElements.length > 0" class="ai-ghost-preview" style="opacity: 0.6; pointer-events: none; z-index: 9999; position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+          <EditableElement 
+            v-for="(element, index) in previewElements" 
+            :key="'preview-' + element.id"
+            :elementInfo="element"
+            :elementIndex="elementList.length + index + 1"
+            :isMultiSelect="false"
+            :selectElement="() => {}"
+            :openLinkDialog="() => {}"
+          />
+        </div>
       </div>
     </div>
 
@@ -162,6 +173,7 @@ const {
   creatingCustomShape,
   canvasScale,
   textFormatPainter,
+  previewElements,
 } = storeToRefs(mainStore)
 const { currentSlide } = storeToRefs(useSlidesStore())
 const { ctrlKeyState, spaceKeyState } = storeToRefs(useKeyboardStore())

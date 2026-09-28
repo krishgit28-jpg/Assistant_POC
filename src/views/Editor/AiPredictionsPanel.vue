@@ -33,6 +33,8 @@
           :class="{ executing: executingId === pred.actionId }"
           :style="{ '--delay': `${index * 60}ms` }"
           @click="executePrediction(pred)"
+          @mouseenter="handleMouseEnter(pred)"
+          @mouseleave="handleMouseLeave"
         >
           <div class="card-header">
             <span class="card-rank">#{{ index + 1 }}</span>
@@ -76,6 +78,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useStepExecutor } from '@/services/stepExecutor'
 import type { ExecutableStep } from '@/services/stepExecutor'
+import { useSlidesStore, useMainStore } from '@/store'
+import type { Slide } from '@/types/slides'
 
 interface PredictedAction {
   actionId: string
@@ -88,6 +92,8 @@ interface PredictedAction {
 const predictions = ref<PredictedAction[]>([])
 const isPolling = ref(false)
 const executingId = ref<string | null>(null)
+
+const hoveredPrediction = ref<PredictedAction | null>(null)
 
 const { executeSteps } = useStepExecutor()
 
@@ -146,6 +152,74 @@ function executePrediction(pred: PredictedAction) {
   setTimeout(() => {
     executingId.value = null
   }, 600)
+}
+
+// ── Hover Preview Logic ──────────────────────────────────────────────────────
+
+function handleMouseEnter(pred: PredictedAction) {
+  hoveredPrediction.value = pred
+  
+  const slidesStore = useSlidesStore()
+  const mainStore = useMainStore()
+  
+  if (!slidesStore.currentSlide) return
+
+  const activeId = mainStore.handleElementId
+  
+  if (activeId) {
+    const originalEl = slidesStore.currentSlide.elements.find(el => el.id === activeId)
+    if (originalEl) {
+      const targetEl = JSON.parse(JSON.stringify(originalEl)) as any
+      const previewElements = []
+
+      for (const step of pred.steps) {
+        if (step.command === 'bold' && targetEl.type === 'text') targetEl.defaultFontWeight = 'bold'
+        if (step.command === 'italic' && targetEl.type === 'text') targetEl.defaultFontStyle = 'italic'
+        if (step.command === 'underline' && targetEl.type === 'text') targetEl.defaultTextDecoration = 'underline'
+        if (step.command === 'changeTextColor' && targetEl.type === 'text') targetEl.defaultColor = (step.args?.color as string) || '#e2534d'
+        
+        if (step.command === 'fontSizeUp' && targetEl.type === 'text') {
+          const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
+          targetEl.defaultSize = (size + 4) + 'px'
+        }
+        if (step.command === 'fontSizeDown' && targetEl.type === 'text') {
+          const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
+          targetEl.defaultSize = (size - 4) + 'px'
+        }
+        
+        if (step.command === 'updateElement' && step.args && step.args.props) {
+          Object.assign(targetEl, step.args.props)
+        }
+        
+        // Basic alignment simulation (using PPTist default canvas 1000x562.5)
+        if (step.command === 'alignCenter') {
+          targetEl.left = 1000 / 2 - (targetEl.width / 2)
+        }
+        if (step.command === 'alignVertical') {
+          targetEl.top = 562.5 / 2 - (targetEl.height / 2)
+        }
+
+        if (step.command === 'updateTextContent' && targetEl.type === 'text' && step.args?.text) {
+          targetEl.content = step.args.text
+        }
+
+        if (step.command === 'duplicate') {
+          targetEl.left += 20
+          targetEl.top += 20
+        }
+      }
+      
+      targetEl.id = targetEl.id + '-preview'
+      previewElements.push(targetEl)
+      mainStore.setPreviewElements(previewElements)
+    }
+  }
+}
+
+function handleMouseLeave() {
+  hoveredPrediction.value = null
+  const mainStore = useMainStore()
+  mainStore.setPreviewElements([])
 }
 
 // ── Display helpers ──────────────────────────────────────────────────────────
@@ -208,7 +282,8 @@ function formatArgs(args: Record<string, unknown>): string {
   background: linear-gradient(180deg, #faf8ff 0%, #ffffff 100%);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible; /* Need this so the popover can escape the panel bounds */
+  position: relative;
 }
 
 .panel-header {
