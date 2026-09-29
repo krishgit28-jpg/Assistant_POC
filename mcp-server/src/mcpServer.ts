@@ -21,7 +21,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { getLatestPayload, getStoreStatus, updatePredictions, clearPredictions } from './stateStore.js'
+import { getLatestPayload, getStoreStatus, updateSuggestions, clearSuggestions } from './stateStore.js'
 import { analyzeContext } from './analyzers.js'
 
 const LIVE_CONTEXT_URI = 'pptist://context/live'
@@ -140,32 +140,25 @@ export function createMcpServer(): McpServer {
     }
   )
 
-  // ── Tool: send_predicted_actions ───────────────────────────────────────────
-  // OpenClaw calls this to push its top-5 predicted actions back to the frontend.
-  // Each prediction includes:
-  //   - actionId:    unique identifier (from ACTION_CATALOGUE or custom)
-  //   - label:       human-readable button text
-  //   - description: tooltip text
-  //   - confidence:  0.0–1.0 score
-  //   - steps:       array of { command, args? } to execute sequentially on click
+  // ── Tool: send_ai_suggestions ───────────────────────────────────────────
+  // OpenClaw calls this to push up to 5 suggestions back to the frontend.
+  // Each suggestion can EITHER be a sequence of commands OR a complete state update.
   server.tool(
-    'send_predicted_actions',
-    `Push up to 5 predicted next-actions back to the PPTist frontend. Each action can be a single command or a multi-step sequence. The frontend will display these as clickable buttons — pressing a button executes all steps in order.
+    'send_ai_suggestions',
+    `Push up to 5 AI suggestions back to the PPTist frontend.
+Each suggestion can either be a sequence of commands (type: 'action_sequence') 
+OR a full element state update (type: 'design_option') for major overhauls.
 
-STEP COMMANDS: Each step's "command" field should be one of:
+STEP COMMANDS (for action_sequence):
   - An ACTION_CATALOGUE ID (e.g., "bold", "alignCenter", "duplicate", "deleteEl")
   - A store method: "updateElement" (requires args: { id, props })
-  - A store method: "addElement" (requires args with element data)
-
-EXAMPLES:
-  Simple:  { "command": "bold" }
-  With args: { "command": "updateElement", "args": { "id": "abc123", "props": { "fill": "#ff0000" } } }
-  Multi-step: steps: [{ "command": "bold" }, { "command": "fontSizeUp" }, { "command": "changeTextColor" }]`,
+  - A store method: "addElement" (requires args with element data)`,
     {
-      predictions: z.array(
+      suggestions: z.array(
         z.object({
-          actionId: z.string().describe('Unique identifier for this action'),
-          label: z.string().describe('Human-readable button label (e.g., "Bold Text", "Fix Alignment")'),
+          id: z.string().describe('Unique identifier for this suggestion'),
+          type: z.enum(['action_sequence', 'design_option']).describe('The type of this suggestion'),
+          label: z.string().describe('Human-readable button label (e.g., "Bold Text", "Modern Dark Theme")'),
           description: z.string().describe('Short description for tooltip'),
           confidence: z.number().min(0).max(1).describe('Confidence score between 0.0 and 1.0'),
           steps: z.array(
@@ -182,19 +175,25 @@ EXAMPLES:
               ]).describe('Action ID or store method name to execute'),
               args: z.record(z.unknown()).optional().describe('Optional arguments for the command'),
             })
-          ).min(1).describe('Sequence of commands to execute when the button is clicked'),
+          ).optional().describe('Sequence of commands to execute (required if type is action_sequence)'),
+          updatedElements: z.array(
+            z.object({
+              id: z.string().describe('Target element ID to update'),
+              props: z.record(z.unknown()).describe('The full set of updated properties to apply to this element')
+            })
+          ).optional().describe('Array of element state updates (required if type is design_option)'),
         })
-      ).min(1).max(5).describe('Array of 1–5 predicted actions, ordered by confidence (highest first)'),
+      ).min(1).max(5).describe('Array of 1–5 suggestions, ordered by confidence (highest first)'),
     },
-    async ({ predictions }) => {
+    async ({ suggestions }) => {
       // Validate and store
-      const sorted = [...predictions].sort((a, b) => b.confidence - a.confidence)
+      const sorted = [...suggestions].sort((a, b) => b.confidence - a.confidence)
 
-      updatePredictions(sorted)
+      updateSuggestions(sorted)
 
-      console.error(`[MCP] Stored ${sorted.length} predicted actions:`)
+      console.error(`[MCP] Stored ${sorted.length} AI suggestions:`)
       for (const p of sorted) {
-        console.error(`  → ${p.actionId} (${(p.confidence * 100).toFixed(0)}%) "${p.label}" [${p.steps.length} step(s)]`)
+        console.error(`  → ${p.id} [${p.type}] (${(p.confidence * 100).toFixed(0)}%) "${p.label}"`)
       }
 
       return {
@@ -202,8 +201,8 @@ EXAMPLES:
           type: 'text',
           text: JSON.stringify({
             success: true,
-            message: `${sorted.length} predicted actions stored and available to the frontend.`,
-            actionIds: sorted.map(p => p.actionId),
+            message: `${sorted.length} suggestions stored and available to the frontend.`,
+            suggestionIds: sorted.map(p => p.id),
           }),
         }],
       }
@@ -238,8 +237,8 @@ EXAMPLES:
  * Also clears any stale predictions — the LLM should re-predict based on new context.
  */
 export async function notifyContextUpdated(server: McpServer): Promise<void> {
-  // Clear old predictions since context just changed
-  clearPredictions()
+  // Clear old suggestions since context just changed
+  clearSuggestions()
 
   try {
     await server.server.sendResourceUpdated({ uri: LIVE_CONTEXT_URI })

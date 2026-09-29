@@ -28,9 +28,9 @@
       <div v-else class="predictions-list">
         <button
           v-for="(pred, index) in predictions"
-          :key="pred.actionId"
+          :key="pred.id"
           class="prediction-card"
-          :class="{ executing: executingId === pred.actionId }"
+          :class="{ executing: executingId === pred.id }"
           :style="{ '--delay': `${index * 60}ms` }"
           @click="executePrediction(pred)"
           @mouseenter="handleMouseEnter(pred)"
@@ -47,7 +47,7 @@
 
           <div class="card-description">{{ pred.description }}</div>
 
-          <div class="card-steps">
+          <div v-if="pred.type === 'action_sequence' && pred.steps" class="card-steps">
             <div class="steps-label">
               <i-icon-park-outline:list class="steps-icon" />
               {{ pred.steps.length }} step{{ pred.steps.length > 1 ? 's' : '' }}
@@ -64,8 +64,15 @@
               </span>
             </div>
           </div>
+          
+          <div v-else-if="pred.type === 'design_option' && pred.updatedElements" class="card-steps">
+            <div class="steps-label">
+              <i-icon-park-outline:magic class="steps-icon" />
+              Design Overhaul ({{ pred.updatedElements.length }} element{{ pred.updatedElements.length > 1 ? 's' : '' }})
+            </div>
+          </div>
 
-          <div v-if="executingId === pred.actionId" class="executing-overlay">
+          <div v-if="executingId === pred.id" class="executing-overlay">
             <i-icon-park-outline:check-one class="done-icon" />
           </div>
         </button>
@@ -81,19 +88,21 @@ import type { ExecutableStep } from '@/services/stepExecutor'
 import { useSlidesStore, useMainStore } from '@/store'
 import type { Slide } from '@/types/slides'
 
-interface PredictedAction {
-  actionId: string
+interface AiSuggestion {
+  id: string
+  type: 'action_sequence' | 'design_option'
   label: string
   description: string
   confidence: number
-  steps: ExecutableStep[]
+  steps?: ExecutableStep[]
+  updatedElements?: any[]
 }
 
-const predictions = ref<PredictedAction[]>([])
+const predictions = ref<AiSuggestion[]>([])
 const isPolling = ref(false)
 const executingId = ref<string | null>(null)
 
-const hoveredPrediction = ref<PredictedAction | null>(null)
+const hoveredPrediction = ref<AiSuggestion | null>(null)
 
 const { executeSteps } = useStepExecutor()
 
@@ -104,16 +113,16 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function fetchPredictions() {
   try {
-    const response = await fetch(`${MCP_BRIDGE_URL}/predictions`, {
+    const response = await fetch(`${MCP_BRIDGE_URL}/suggestions`, {
       signal: AbortSignal.timeout(2000),
     })
     if (!response.ok) return
 
     const data = await response.json()
-    if (data.predictions && Array.isArray(data.predictions) && data.predictions.length > 0) {
-      predictions.value = data.predictions
+    if (data.suggestions && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+      predictions.value = data.suggestions
     }
-    else if (data.predictions && data.predictions.length === 0) {
+    else if (data.suggestions && data.suggestions.length === 0) {
       // Predictions were cleared (new context arrived, OpenClaw re-predicting)
       predictions.value = []
     }
@@ -144,9 +153,17 @@ onUnmounted(() => stopPolling())
 
 // ── Execute a predicted action ───────────────────────────────────────────────
 
-function executePrediction(pred: PredictedAction) {
-  executingId.value = pred.actionId
-  executeSteps(pred.steps, pred.actionId)
+function executePrediction(pred: AiSuggestion) {
+  executingId.value = pred.id
+  
+  if (pred.type === 'action_sequence' && pred.steps) {
+    executeSteps(pred.steps, pred.id)
+  } else if (pred.type === 'design_option' && pred.updatedElements) {
+    const slidesStore = useSlidesStore()
+    for (const update of pred.updatedElements) {
+      slidesStore.updateElement({ id: update.id, props: update.props })
+    }
+  }
 
   // Brief visual feedback
   setTimeout(() => {
@@ -156,7 +173,7 @@ function executePrediction(pred: PredictedAction) {
 
 // ── Hover Preview Logic ──────────────────────────────────────────────────────
 
-function handleMouseEnter(pred: PredictedAction) {
+function handleMouseEnter(pred: AiSuggestion) {
   hoveredPrediction.value = pred
   
   const slidesStore = useSlidesStore()
@@ -164,56 +181,76 @@ function handleMouseEnter(pred: PredictedAction) {
   
   if (!slidesStore.currentSlide) return
 
-  const activeId = mainStore.handleElementId
-  
-  if (activeId) {
-    const originalEl = slidesStore.currentSlide.elements.find(el => el.id === activeId)
-    if (originalEl) {
-      const targetEl = JSON.parse(JSON.stringify(originalEl)) as any
-      const previewElements = []
+  const activeIdList = mainStore.activeElementIdList
+  if (activeIdList.length === 0) return
 
-      for (const step of pred.steps) {
-        if (step.command === 'bold' && targetEl.type === 'text') targetEl.defaultFontWeight = 'bold'
-        if (step.command === 'italic' && targetEl.type === 'text') targetEl.defaultFontStyle = 'italic'
-        if (step.command === 'underline' && targetEl.type === 'text') targetEl.defaultTextDecoration = 'underline'
-        if (step.command === 'changeTextColor' && targetEl.type === 'text') targetEl.defaultColor = (step.args?.color as string) || '#e2534d'
-        
-        if (step.command === 'fontSizeUp' && targetEl.type === 'text') {
-          const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
-          targetEl.defaultSize = (size + 4) + 'px'
-        }
-        if (step.command === 'fontSizeDown' && targetEl.type === 'text') {
-          const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
-          targetEl.defaultSize = (size - 4) + 'px'
-        }
-        
-        if (step.command === 'updateElement' && step.args && step.args.props) {
-          Object.assign(targetEl, step.args.props)
-        }
-        
-        // Basic alignment simulation (using PPTist default canvas 1000x562.5)
-        if (step.command === 'alignCenter') {
-          targetEl.left = 1000 / 2 - (targetEl.width / 2)
-        }
-        if (step.command === 'alignVertical') {
-          targetEl.top = 562.5 / 2 - (targetEl.height / 2)
-        }
+  const previewElements = []
 
-        if (step.command === 'updateTextContent' && targetEl.type === 'text' && step.args?.text) {
-          targetEl.content = step.args.text
-        }
+  if (pred.type === 'action_sequence' && pred.steps) {
+    // For sequence, apply to ALL selected elements
+    for (const activeId of activeIdList) {
+      const originalEl = slidesStore.currentSlide.elements.find(el => el.id === activeId)
+      if (originalEl) {
+        const targetEl = JSON.parse(JSON.stringify(originalEl)) as any
 
-        if (step.command === 'duplicate') {
-          targetEl.left += 20
-          targetEl.top += 20
+        for (const step of pred.steps) {
+          if (step.command === 'bold' && targetEl.type === 'text') targetEl.defaultFontWeight = 'bold'
+          if (step.command === 'italic' && targetEl.type === 'text') targetEl.defaultFontStyle = 'italic'
+          if (step.command === 'underline' && targetEl.type === 'text') targetEl.defaultTextDecoration = 'underline'
+          if (step.command === 'changeTextColor' && targetEl.type === 'text') targetEl.defaultColor = (step.args?.color as string) || '#e2534d'
+          
+          if (step.command === 'fontSizeUp' && targetEl.type === 'text') {
+            const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
+            targetEl.defaultSize = (size + 4) + 'px'
+          }
+          if (step.command === 'fontSizeDown' && targetEl.type === 'text') {
+            const size = parseInt(targetEl.defaultSize?.replace('px', '') || '20')
+            targetEl.defaultSize = (size - 4) + 'px'
+          }
+          
+          if (step.command === 'updateElement' && step.args && step.args.props) {
+            Object.assign(targetEl, step.args.props)
+          }
+          
+          // Basic alignment simulation (using PPTist default canvas 1000x562.5)
+          if (step.command === 'alignCenter') {
+            targetEl.left = 1000 / 2 - (targetEl.width / 2)
+          }
+          if (step.command === 'alignVertical') {
+            targetEl.top = 562.5 / 2 - (targetEl.height / 2)
+          }
+          if (step.command === 'alignLeft') {
+            targetEl.left = 0 // Simulating alignment to canvas edge for now
+          }
+
+          if (step.command === 'updateTextContent' && targetEl.type === 'text' && step.args?.text) {
+            targetEl.content = step.args.text
+          }
+
+          if (step.command === 'duplicate') {
+            targetEl.left += 20
+            targetEl.top += 20
+          }
         }
+        
+        targetEl.id = targetEl.id + '-preview'
+        previewElements.push(targetEl)
       }
-      
-      targetEl.id = targetEl.id + '-preview'
-      previewElements.push(targetEl)
-      mainStore.setPreviewElements(previewElements)
+    }
+  } else if (pred.type === 'design_option' && pred.updatedElements) {
+    // For design options, patch all specified elements
+    for (const update of pred.updatedElements) {
+      const originalEl = slidesStore.currentSlide.elements.find(el => el.id === update.id)
+      if (originalEl) {
+        const targetEl = JSON.parse(JSON.stringify(originalEl)) as any
+        Object.assign(targetEl, update.props)
+        targetEl.id = targetEl.id + '-preview'
+        previewElements.push(targetEl)
+      }
     }
   }
+
+  mainStore.setPreviewElements(previewElements)
 }
 
 function handleMouseLeave() {

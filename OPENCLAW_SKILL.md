@@ -1,6 +1,6 @@
 # OpenClaw × PPTist MCP Skill Guide
 
-> **Purpose:** This document teaches OpenClaw (or any LLM MCP client) how to effectively use the PPTist MCP Bridge to act as a real-time design assistant. It covers the tool lifecycle, prediction strategies, and non-obvious tactics.
+> **Purpose:** You are a real-time AI design assistant for the PPTist slide editor. You use the PPTist MCP server tools to read the user's current editor state and push intelligent design suggestions back to the UI.
 
 ---
 
@@ -10,15 +10,16 @@ When you first connect to the PPTist MCP server, you **MUST** do these 3 things 
 
 ```
 Step 1: Subscribe to pptist://context/live
-Step 2: Wait for notifications (do NOT predict yet)
-Step 3: On first notification → read resource → send predictions
+Step 2: Wait for notifications in the background (do NOT predict yet).
+Step 3: On EVERY notification → read the resource → analyze → send predictions.
+Step 4: Return to Step 2. NEVER unsubscribe and NEVER exit the loop unless the user explicitly stops you.
 ```
 
 > [!CAUTION]
-> **Never call `send_predicted_actions` before you have received and read at least one context update.** You have zero information about what the user is doing until the first notification arrives.
+> **Never call `send_ai_suggestions` before you have received and read at least one context update.** You have zero information about what the user is doing until the first notification arrives.
 
 > [!IMPORTANT]
-> **Subscribe ONCE.** Do not re-subscribe on every notification. The subscription is persistent. You will automatically receive `notifications/resources/updated` events whenever the user acts. Note: The frontend uses a 1.5s debounce, meaning you won't be spammed while the user is dragging something. You will only get notified when they finish moving.
+> **Subscribe ONCE.** Do not re-subscribe on every notification. The subscription is persistent. You will automatically receive `notifications/resources/updated` events whenever the user acts. You must stay subscribed and continuously process every notification that arrives. Note: The frontend uses a 1.5s debounce, meaning you won't be spammed while the user is dragging something. You will only get notified when they finish moving.
 
 ---
 
@@ -33,28 +34,25 @@ You read pptist://context/live
        ↓
 You analyze context + insights (see Section 4)
        ↓
-You call send_predicted_actions with 5 predictions
+You call send_ai_suggestions with up to 5 predictions
 ```
 
 ---
 
 ## 3. Understanding the Context Payload
 
-When you read `pptist://context/live`, you get 5 signals. 
+When you read `pptist://context/live`, you get these signals:
 
 ### `triggerAction` — What the user JUST did
 Tells you the user's *intent momentum*. (e.g. `updateElement` means they are styling/editing, `addElement` means they are building).
 
 ### `currentSelection` — What is selected RIGHT NOW
-Contains the element(s) the user has selected. Type determines valid actions.
-
-### `currentSlide` — The environment around the selection
-Contains `id`, `background`, and `elements[]` (ALL elements on the slide).
+Contains the FULL elements the user has selected, including geometry (left, top, width, height), fill, text properties, and content. Type determines valid actions.
 
 ### `recentActions` — The behavioral pattern (last 5 actions)
 Your strongest signal for prediction. If they just did 3 text formatting actions, predict more text formatting!
 
-### `insights` (NEW) — Pre-Calculated AI Intelligence
+### `insights` — Pre-Calculated AI Intelligence
 The MCP server automatically calculates complex geometric and color math for you!
 * `alignmentIssues`: Tells you if elements are off-center or misaligned by a few pixels.
 * `contrastIssues`: Tells you if text color clashes with the slide background (low luminance difference).
@@ -64,9 +62,13 @@ The MCP server automatically calculates complex geometric and color math for you
 
 ---
 
-## 4. Prediction Strategy — The 5-Action Formula
+## 4. Prediction Strategy
 
-You must send exactly 1–5 predictions, ordered by confidence. Here's a tactical framework:
+You have a single unified tool `send_ai_suggestions`. Each suggestion can be one of TWO types:
+1. `type: "action_sequence"`: Send a sequence of small commands (like `bold`, `updateElement`).
+2. `type: "design_option"`: Send fully updated element states directly, bypassing sequence logic. Use this for major design overhauls.
+
+If using `"action_sequence"`, here is a tactical framework:
 
 | Slot | Purpose | Confidence Range |
 |------|---------|-----------------|
@@ -82,26 +84,11 @@ You must send exactly 1–5 predictions, ordered by confidence. Here's a tactica
 
 The `steps` array lets you compose multi-step actions that the user executes with a single click.
 
-### Pattern: Compound Formatting
-```json
-{
-  "actionId": "make-heading-style",
-  "label": "Apply Heading Style",
-  "description": "Bold, increase font size, and center the text",
-  "confidence": 0.75,
-  "steps": [
-    { "command": "bold" },
-    { "command": "fontSizeUp" },
-    { "command": "fontSizeUp" },
-    { "command": "alignCenter" }
-  ]
-}
-```
-
 ### Pattern: Fix an Insight Issue (Contrast)
 ```json
 {
-  "actionId": "fix-low-contrast",
+  "id": "fix-low-contrast",
+  "type": "action_sequence",
   "label": "Fix Low Contrast",
   "description": "Text is hard to read against the background — change to white",
   "confidence": 0.92,
@@ -130,40 +117,29 @@ The `command` property is heavily strictly validated by a Zod schema. If you pre
 
 ---
 
-## 7. Example Full Prediction Response
+## 7. Using `type: "design_option"` for Major Overhauls
 
-Given context:
-- User selected a text element ("PPTist Editor")
-- `insights` reports low contrast for this element
-- Recent actions: `[select text, format text]`
+When a user selects multiple elements or requires a complete restyling, sending a sequence of commands can be fragile. Instead, use the `design_option` type to push fully updated state for the elements directly.
 
 ```json
 {
-  "predictions": [
+  "suggestions": [
     {
-      "actionId": "fix-low-contrast",
-      "label": "Fix Low Contrast",
-      "description": "Text #333 on background #1a1a3e is nearly invisible — switch to white",
-      "confidence": 0.92,
-      "steps": [
-        { "command": "updateElement", "args": { "id": "7stmVP", "props": { "defaultColor": "#ffffff" } } }
-      ]
-    },
-    {
-      "actionId": "bold",
-      "label": "Bold Text",
-      "description": "Make the title text bold for emphasis",
-      "confidence": 0.78,
-      "steps": [{ "command": "bold" }]
-    },
-    {
-      "actionId": "center-on-slide",
-      "label": "Center on Slide",
-      "description": "Center the title horizontally and vertically",
-      "confidence": 0.65,
-      "steps": [
-        { "command": "alignCenter" },
-        { "command": "alignVertical" }
+      "id": "modern-dark",
+      "type": "design_option",
+      "label": "Modern Dark Theme",
+      "description": "Applies a dark background and white text",
+      "confidence": 0.9,
+      "updatedElements": [
+        {
+          "id": "elem-id-here",
+          "props": {
+            "fill": "#333333",
+            "defaultColor": "#ffffff",
+            "left": 100,
+            "top": 150
+          }
+        }
       ]
     }
   ]

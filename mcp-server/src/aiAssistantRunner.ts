@@ -4,212 +4,123 @@ import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/typ
 
 interface PredictedStep {
   command:
-    | 'bold'
-    | 'italic'
-    | 'underline'
-    | 'strikethrough'
-    | 'fontSizeUp'
-    | 'fontSizeDown'
-    | 'changeTextColor'
-    | 'alignLeft'
-    | 'alignCenter'
-    | 'alignRight'
-    | 'alignTop'
-    | 'alignVertical'
-    | 'alignBottom'
-    | 'bringToFront'
-    | 'sendToBack'
-    | 'bringForward'
-    | 'sendBackward'
-    | 'duplicate'
-    | 'deleteEl'
-    | 'flipHorizontal'
-    | 'flipVertical'
-    | 'fitToSlide'
-    | 'editChartData'
-    | 'insertTableRow'
-    | 'insertTableCol'
-    | 'deleteTableRow'
-    | 'deleteTableCol'
-    | 'updateElement'
-    | 'addElement'
+  | 'bold'
+  | 'italic'
+  | 'underline'
+  | 'strikethrough'
+  | 'fontSizeUp'
+  | 'fontSizeDown'
+  | 'changeTextColor'
+  | 'alignLeft'
+  | 'alignCenter'
+  | 'alignRight'
+  | 'alignTop'
+  | 'alignVertical'
+  | 'alignBottom'
+  | 'bringToFront'
+  | 'sendToBack'
+  | 'bringForward'
+  | 'sendBackward'
+  | 'duplicate'
+  | 'deleteEl'
+  | 'flipHorizontal'
+  | 'flipVertical'
+  | 'fitToSlide'
+  | 'editChartData'
+  | 'insertTableRow'
+  | 'insertTableCol'
+  | 'deleteTableRow'
+  | 'deleteTableCol'
+  | 'updateElement'
+  | 'addElement'
   args?: Record<string, unknown>
 }
 
-interface PredictedAction {
-  actionId: string
+interface AiSuggestion {
+  id: string
+  type: 'action_sequence' | 'design_option'
   label: string
   description: string
   confidence: number
-  steps: PredictedStep[]
+  steps?: PredictedStep[]
+  updatedElements?: any[]
 }
 
-function generatePredictions(context: any): PredictedAction[] {
-  const predictions: PredictedAction[] = []
-  const selection = context.currentSelection || []
-  const currentSlide = context.currentSlide || {}
-  const insights = context.insights || {}
-  const selectedCount = selection.length
-  const primaryEl = selectedCount > 0 ? selection[0] : null
+const SYSTEM_PROMPT = `You are a real-time AI design assistant for the PPTist slide editor. 
+You will receive the user's current editor state (selection, geometry, recent actions, and calculated insights).
+Your job is to analyze this state and return an array of up to 5 intelligent design suggestions.
 
-  // 1. High-priority checks from Insights
-  if (insights.alignmentIssues && insights.alignmentIssues.length > 0) {
-    predictions.push({
-      actionId: 'fix_alignment_center',
-      label: 'Center Align Elements',
-      description: 'Align elements horizontally to resolve near-alignment discrepancy',
-      confidence: 0.95,
-      steps: [{ command: 'alignCenter' }],
-    })
-    predictions.push({
-      actionId: 'fix_alignment_left',
-      label: 'Left Align Elements',
-      description: 'Snap elements to left boundary alignment',
-      confidence: 0.90,
-      steps: [{ command: 'alignLeft' }],
-    })
+SUGGESTION TYPES:
+1. "action_sequence": A sequence of small formatting commands.
+2. "design_option": A major overhaul pushing fully updated element states directly.
+
+VALID COMMANDS for action_sequence steps:
+bold, italic, underline, strikethrough, fontSizeUp, fontSizeDown, changeTextColor,
+alignLeft, alignCenter, alignRight, alignTop, alignVertical, alignBottom, alignGroupLeft,
+bringToFront, sendToBack, bringForward, sendBackward, duplicate, deleteEl,
+flipHorizontal, flipVertical, fitToSlide, updateElement, addElement
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON array of objects matching this schema (do NOT wrap in markdown \`\`\`json):
+[
+  {
+    "id": "unique-string",
+    "type": "action_sequence" | "design_option",
+    "label": "Short Action Name",
+    "description": "Why you are suggesting this",
+    "confidence": 0.95,
+    "steps": [{ "command": "bold" }], // if type is action_sequence
+    "updatedElements": [{ "id": "elemId", "props": { "fill": "#000" } }] // if type is design_option
+  }
+]
+
+CRITICAL STRATEGY: 
+If the 'insights' object contains alignmentIssues or contrastIssues, your #1 suggestion MUST be a sequence to fix them!`
+
+async function generateSmartPredictions(context: any): Promise<AiSuggestion[]> {
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY_HERE'
+  const MODEL = 'gemini-3.8-flash'
+
+  if (GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY_HERE') {
+    console.warn('⚠️ [AI Assistant] GEMINI_API_KEY is not set! Falling back to empty predictions.')
+    return []
   }
 
-  if (insights.contrastIssues && insights.contrastIssues.length > 0) {
-    predictions.push({
-      actionId: 'improve_contrast_color',
-      label: 'Enhance Text Contrast',
-      description: 'Adjust text color to provide optimal legibility against slide background',
-      confidence: 0.92,
-      steps: [{ command: 'changeTextColor' }],
-    })
-  }
+  console.log('🧠 [AI Assistant] Asking Gemini to analyze context...')
 
-  // 2. Element-specific design recommendations
-  if (primaryEl && primaryEl.type === 'text') {
-    predictions.push({
-      actionId: 'emphasize_heading',
-      label: 'Bold & Enlarge',
-      description: 'Make text bold and increase size for visual hierarchy',
-      confidence: 0.88,
-      steps: [{ command: 'bold' }, { command: 'fontSizeUp' }],
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: JSON.stringify(context, null, 2) }] }],
+        generationConfig: {
+          temperature: 0.2,
+          response_mime_type: 'application/json',
+        }
+      })
     })
-    predictions.push({
-      actionId: 'center_text_element',
-      label: 'Center on Slide',
-      description: 'Align selected text box to the horizontal center',
-      confidence: 0.82,
-      steps: [{ command: 'alignCenter' }],
-    })
-    predictions.push({
-      actionId: 'duplicate_text',
-      label: 'Duplicate Text Block',
-      description: 'Duplicate this text block to keep styling consistent',
-      confidence: 0.78,
-      steps: [{ command: 'duplicate' }],
-    })
-    predictions.push({
-      actionId: 'italicize_subtitle',
-      label: 'Italicize',
-      description: 'Apply italic styling for secondary emphasis',
-      confidence: 0.72,
-      steps: [{ command: 'italic' }],
-    })
-  } else if (primaryEl && (primaryEl.type === 'shape' || primaryEl.type === 'image')) {
-    predictions.push({
-      actionId: 'bring_to_front',
-      label: 'Bring to Front',
-      description: 'Elevate element layer above other objects',
-      confidence: 0.88,
-      steps: [{ command: 'bringToFront' }],
-    })
-    predictions.push({
-      actionId: 'duplicate_element',
-      label: 'Duplicate Element',
-      description: 'Duplicate shape/image for visual repetition',
-      confidence: 0.84,
-      steps: [{ command: 'duplicate' }],
-    })
-    predictions.push({
-      actionId: 'center_element',
-      label: 'Center on Slide',
-      description: 'Position element in the exact center',
-      confidence: 0.80,
-      steps: [{ command: 'alignCenter' }, { command: 'alignVertical' }],
-    })
-    predictions.push({
-      actionId: 'flip_horizontal',
-      label: 'Flip Horizontal',
-      description: 'Mirror orientation horizontally',
-      confidence: 0.70,
-      steps: [{ command: 'flipHorizontal' }],
-    })
-  } else if (selectedCount > 1) {
-    predictions.push({
-      actionId: 'align_selection_center',
-      label: 'Align Centers',
-      description: 'Align all selected objects to their collective center',
-      confidence: 0.93,
-      steps: [{ command: 'alignCenter' }],
-    })
-    predictions.push({
-      actionId: 'align_selection_left',
-      label: 'Align Left Edges',
-      description: 'Align all selected objects to the left margin',
-      confidence: 0.89,
-      steps: [{ command: 'alignLeft' }],
-    })
-    predictions.push({
-      actionId: 'duplicate_selection',
-      label: 'Duplicate All',
-      description: 'Duplicate selected element cluster',
-      confidence: 0.82,
-      steps: [{ command: 'duplicate' }],
-    })
-  }
 
-  // 3. Fallbacks to guarantee 5 distinct predictions
-  const defaultActions: PredictedAction[] = [
-    {
-      actionId: 'align_horizontal_center',
-      label: 'Center Align',
-      description: 'Center align current selection',
-      confidence: 0.65,
-      steps: [{ command: 'alignCenter' }],
-    },
-    {
-      actionId: 'bring_forward',
-      label: 'Bring Forward',
-      description: 'Move selected object one layer up',
-      confidence: 0.60,
-      steps: [{ command: 'bringForward' }],
-    },
-    {
-      actionId: 'duplicate_item',
-      label: 'Duplicate',
-      description: 'Create a copy of selected element',
-      confidence: 0.58,
-      steps: [{ command: 'duplicate' }],
-    },
-    {
-      actionId: 'fit_to_slide',
-      label: 'Fit to Slide',
-      description: 'Scale or position element to fit slide canvas',
-      confidence: 0.55,
-      steps: [{ command: 'fitToSlide' }],
-    },
-    {
-      actionId: 'align_vertical_center',
-      label: 'Align Vertically',
-      description: 'Align element vertically to slide middle',
-      confidence: 0.50,
-      steps: [{ command: 'alignVertical' }],
-    },
-  ]
-
-  for (const def of defaultActions) {
-    if (!predictions.some((p) => p.actionId === def.actionId)) {
-      predictions.push(def)
+    if (!response.ok) {
+      console.error('❌ [AI Assistant] Gemini API Error:', await response.text())
+      return []
     }
-    if (predictions.length >= 5) break
-  }
 
-  return predictions.slice(0, 5)
+    const data = await response.json()
+    const textOutput = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+    if (!textOutput) {
+      console.error('❌ [AI Assistant] Gemini returned empty response.')
+      return []
+    }
+
+    const predictions: AiSuggestion[] = JSON.parse(textOutput)
+    return predictions.slice(0, 5)
+  } catch (err) {
+    console.error('❌ [AI Assistant] Failed to call Gemini:', err)
+    return []
+  }
 }
 
 async function main() {
@@ -217,7 +128,7 @@ async function main() {
 
   const transport = new StdioClientTransport({
     command: 'npx',
-    args: ['tsx', 'src/index.ts'],
+    args: ['tsx', 'mcp-server/src/index.ts'],
     stderr: 'inherit',
   })
 
@@ -245,8 +156,8 @@ async function main() {
       const res = await client.readResource({ uri: LIVE_CONTEXT_URI })
       const content = res.contents[0]
 
-      if (!content || !content.text) {
-        console.warn('⚠️ [AI Assistant] Resource content was empty.')
+      if (!content || !('text' in content) || typeof content.text !== 'string') {
+        console.warn('⚠️ [AI Assistant] Resource content was empty or not text.')
         return
       }
 
@@ -254,21 +165,21 @@ async function main() {
       console.log(`🎯 [AI Assistant] Context Action: ${contextData.triggerAction || 'unknown'}`)
       console.log(`🎯 [AI Assistant] Selected Elements: ${(contextData.currentSelection || []).length}`)
 
-      // Generate 5 predicted actions
-      const predictions = generatePredictions(contextData)
-      console.log(`✨ [AI Assistant] Generated ${predictions.length} design predictions:`)
-      for (const p of predictions) {
-        console.log(`   - [${p.actionId}] "${p.label}" (${(p.confidence * 100).toFixed(0)}% conf)`)
+      // Generate 5 predicted actions via Gemini
+      const suggestions = await generateSmartPredictions(contextData)
+      console.log(`✨ [AI Assistant] Generated ${suggestions.length} design suggestions:`)
+      for (const p of suggestions) {
+        console.log(`   - [${p.id}] "${p.label}" (${(p.confidence * 100).toFixed(0)}% conf)`)
       }
 
       // Send predictions via tool call
-      console.log('📤 [AI Assistant] Calling send_predicted_actions...')
+      console.log('📤 [AI Assistant] Calling send_ai_suggestions...')
       const toolResult = await client.callTool({
-        name: 'send_predicted_actions',
-        arguments: { predictions },
+        name: 'send_ai_suggestions',
+        arguments: { suggestions },
       })
 
-      console.log('✅ [AI Assistant] Predictions dispatched to frontend successfully!')
+      console.log('✅ [AI Assistant] Suggestions dispatched to frontend successfully!')
     } catch (err) {
       console.error('❌ [AI Assistant] Error handling notification:', err)
     }

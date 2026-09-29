@@ -96,7 +96,17 @@ export class CommunicationTriggers {
     const currentSelection = (payload.currentSelection || []).map((el: any) => ({
       id: el.id,
       type: el.type,
-      ...(el.type === 'text' && el.content ? { content: String(el.content).replace(/<[^>]*>/g, '').slice(0, 60) } : {}),
+      left: Math.round(el.left ?? 0),
+      top: Math.round(el.top ?? 0),
+      width: Math.round(el.width ?? 0),
+      height: Math.round(el.height ?? 0),
+      ...(el.fill ? { fill: el.fill } : {}),
+      ...(el.type === 'text' ? { 
+        defaultColor: el.defaultColor,
+        defaultFontName: el.defaultFontName,
+        defaultSize: el.defaultSize,
+        content: String(el.content).replace(/<[^>]*>/g, '').slice(0, 100)
+      } : {}),
     }))
 
     // Serialize slide — include geometry and colors of all elements for alignment/contrast detection
@@ -119,11 +129,11 @@ export class CommunicationTriggers {
       } : {}),
     }))
 
-    const currentSlide = {
-      id: slide?.id ?? '',
-      background: slide?.background?.type === 'solid' ? slide?.background?.color : slide?.background?.type,
-      elements: compressedElements,
-    }
+    // const currentSlide = {
+    //   id: slide?.id ?? '',
+    //   background: slide?.background?.type === 'solid' ? slide?.background?.color : slide?.background?.type,
+    //   elements: compressedElements,
+    // }
 
     // Serialize actions — keep details that help AI understand the action (skip timestamps)
     const last5Actions = (payload.last5Actions || []).map((a: any) => ({
@@ -136,7 +146,7 @@ export class CommunicationTriggers {
     return {
       triggerAction: payload.triggerAction,
       currentSelection,
-      currentSlide,
+      // currentSlide,
       last5Actions,
     }
   }

@@ -46,7 +46,7 @@ export function analyzeContext(payload: MCPPayload): ContextInsights {
     fontConsistency: [],
   }
 
-  const elements = payload.currentSlide?.elements || []
+  const elements = payload.currentSelection || []
   if (elements.length === 0) return insights
 
   // 1. Alignment Analysis
@@ -87,7 +87,9 @@ export function analyzeContext(payload: MCPPayload): ContextInsights {
   }
 
   // 2. Contrast Analysis
-  const bgLuminance = getLuminance(payload.currentSlide.background ?? '#ffffff')
+  // Since we don't have the full slide background anymore, we'll assume a white background #ffffff for contrast checks
+  // unless we pass background explicitly in the future.
+  const bgLuminance = getLuminance('#ffffff')
   
   for (const el of elements) {
     if (el.type === 'text' && el.defaultColor) {
@@ -96,7 +98,7 @@ export function analyzeContext(payload: MCPPayload): ContextInsights {
       
       // If luminance difference is less than 60 (out of 255), it's probably hard to read
       if (diff < 60) {
-        insights.contrastIssues.push(`Text element ${el.id} has low contrast against the background. (Text: ${el.defaultColor}, BG: ${payload.currentSlide.background ?? '#ffffff'})`)
+        insights.contrastIssues.push(`Text element ${el.id} has low contrast against a white background. (Text: ${el.defaultColor})`)
       }
     }
   }

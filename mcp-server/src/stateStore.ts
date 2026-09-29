@@ -11,7 +11,7 @@
  * Only the latest context matters (no history of contexts).
  */
 
-import type { MCPPayload, PredictedAction, PredictionPayload } from './types.js'
+import type { MCPPayload, AiSuggestion, AiSuggestionsPayload } from './types.js'
 
 // ── Context State (Browser → MCP Server) ─────────────────────────────────────
 
@@ -65,45 +65,33 @@ export function getStoreStatus(): { hasData: boolean; lastUpdated: number | null
   }
 }
 
-// ── Predictions State (OpenClaw → MCP Server → Browser) ──────────────────────
+// ── Suggestions State (OpenClaw → MCP Server → Browser) ──────────────────────
 
-interface PredictionsState {
-  /** The most recent predictions from OpenClaw */
-  latestPredictions: PredictionPayload | null
-  /** How many prediction sets we've received since server start */
-  predictionCount: number
+interface SuggestionsState {
+  latestSuggestions: AiSuggestionsPayload | null
+  suggestionCount: number
 }
 
-const predictionsState: PredictionsState = {
-  latestPredictions: null,
-  predictionCount: 0,
+const suggestionsState: SuggestionsState = {
+  latestSuggestions: null,
+  suggestionCount: 0,
 }
 
-/**
- * Store new predictions from OpenClaw.
- * Called when the LLM invokes the send_predicted_actions MCP tool.
- */
-export function updatePredictions(predictions: PredictedAction[]): void {
-  predictionsState.latestPredictions = {
-    predictions,
+export function updateSuggestions(suggestions: AiSuggestion[]): void {
+  suggestionsState.latestSuggestions = {
+    suggestions,
     timestamp: Date.now(),
   }
-  predictionsState.predictionCount++
-  console.error(`[StateStore] Predictions updated (total sets: ${predictionsState.predictionCount}) — ${predictions.length} actions`)
+  suggestionsState.suggestionCount++
+  console.error(`[StateStore] Suggestions updated (total sets: ${suggestionsState.suggestionCount}) — ${suggestions.length} suggestions`)
 }
 
-/**
- * Get the latest predictions. Returns null if none have been received yet.
- */
-export function getLatestPredictions(): PredictionPayload | null {
-  return predictionsState.latestPredictions
+export function getLatestSuggestions(): AiSuggestionsPayload | null {
+  return suggestionsState.latestSuggestions
 }
 
-/**
- * Clear predictions (e.g., when context changes and old predictions are stale).
- */
-export function clearPredictions(): void {
-  predictionsState.latestPredictions = null
-  console.error('[StateStore] Predictions cleared')
+export function clearSuggestions(): void {
+  suggestionsState.latestSuggestions = null
+  console.error('[StateStore] Suggestions cleared')
 }
 

@@ -16,7 +16,7 @@
 import http from 'node:http'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { MCPPayload } from './types.js'
-import { updateState, getLatestPredictions } from './stateStore.js'
+import { updateState, getLatestSuggestions } from './stateStore.js'
 import { notifyContextUpdated } from './mcpServer.js'
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT ?? '3100', 10)
@@ -42,21 +42,28 @@ export function startHttpServer(mcpServer: McpServer): http.Server {
 
     // POST /context — receive payload from CommunicationTriggers
     if (req.method === 'POST' && req.url === '/context') {
+      console.error('[HTTP] 📥 Received POST /context from browser')
       try {
         const body = await readBody(req)
         const payload: MCPPayload = JSON.parse(body)
+        
+        console.error(`[HTTP] Payload parsed. Trigger Action: ${payload.triggerAction}`)
+        console.error(`[HTTP] Selected elements count: ${payload.currentSelection?.length || 0}`)
 
         // Validate basic structure
-        if (!payload.triggerAction || !payload.currentSlide) {
+        if (!payload.triggerAction) {
+          console.error('[HTTP] ❌ Invalid payload: missing triggerAction')
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid payload: missing triggerAction or currentSlide' }))
+          res.end(JSON.stringify({ error: 'Invalid payload: missing triggerAction' }))
           return
         }
 
         // 1. Store the latest context
         updateState(payload)
+        console.error('[HTTP] ✅ Internal state updated successfully.')
 
         // 2. Notify OpenClaw that the resource has been updated
+        console.error('[HTTP] 🔔 Notifying MCP client (OpenClaw) about resource update...')
         await notifyContextUpdated(mcpServer)
 
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -70,22 +77,23 @@ export function startHttpServer(mcpServer: McpServer): http.Server {
       return
     }
 
-    // GET /predictions — serve latest AI predictions to the browser
-    if (req.method === 'GET' && req.url === '/predictions') {
-      const predictions = getLatestPredictions()
+    // GET /suggestions — serve latest AI suggestions to the browser
+    if (req.method === 'GET' && req.url === '/suggestions') {
+      const suggestions = getLatestSuggestions()
 
-      if (!predictions) {
+      if (!suggestions) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({
-          predictions: [],
+          suggestions: [],
           timestamp: null,
-          message: 'No predictions available yet. Waiting for the AI to analyze context.',
+          message: 'No suggestions available yet. Waiting for the AI to analyze context.',
         }))
         return
       }
 
+      console.error(`[HTTP] 📤 Browser fetched suggestions. Returning ${suggestions.suggestions.length} items.`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(predictions))
+      res.end(JSON.stringify(suggestions))
       return
     }
 
@@ -101,12 +109,35 @@ export function startHttpServer(mcpServer: McpServer): http.Server {
     res.end(JSON.stringify({ error: 'Not found' }))
   })
 
-  server.listen(PORT, () => {
-    console.error(`[HTTP] Listening on http://localhost:${PORT}`)
-    console.error(`[HTTP] POST /context      — receive browser context`)
-    console.error(`[HTTP] GET  /predictions  — serve AI predictions to browser`)
-    console.error(`[HTTP] GET  /health       — health check`)
+  let retries = 5
+  
+  const startListening = () => {
+    server.listen(PORT, () => {
+      console.error(`[HTTP] Listening on http://localhost:${PORT}`)
+      console.error(`[HTTP] POST /context         — receive browser context`)
+      console.error(`[HTTP] GET  /suggestions     — serve AI suggestions to browser`)
+      console.error(`[HTTP] GET  /health          — health check`)
+    })
+  }
+
+  server.on('error', (e: NodeJS.ErrnoException) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`[HTTP] Port ${PORT} is in use, retrying in 1s... (${retries} attempts left)`)
+      retries -= 1
+      if (retries === 0) {
+        console.error(`[HTTP] Failed to bind to port ${PORT} after multiple attempts. Is another MCP server instance already running?`)
+        process.exit(1)
+      }
+      setTimeout(() => {
+        server.close()
+        startListening()
+      }, 1000)
+    } else {
+      console.error('[HTTP] Server error:', e)
+    }
   })
+
+  startListening()
 
   return server
 }
