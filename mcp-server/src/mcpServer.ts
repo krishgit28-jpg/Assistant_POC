@@ -237,8 +237,8 @@ STEP COMMANDS (for action_sequence):
  * Also clears any stale predictions — the LLM should re-predict based on new context.
  */
 export async function notifyContextUpdated(server: McpServer): Promise<void> {
-  // Clear old suggestions since context just changed
-  clearSuggestions()
+  // We no longer clear suggestions here so the UI doesn't flash "Waiting for AI"
+  // The old suggestions will remain visible until the LLM finishes and overwrites them.
 
   try {
     await server.server.sendResourceUpdated({ uri: LIVE_CONTEXT_URI })
