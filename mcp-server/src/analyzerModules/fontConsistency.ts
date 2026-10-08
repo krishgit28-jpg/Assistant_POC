@@ -21,15 +21,21 @@ export class FontConsistencyAnalyzer implements ContextAnalyzer {
     const textElements = (payload.currentSelection || []).filter(el => el.type === 'text')
     const issues: string[] = []
 
-    if (textElements.length > 1) {
-      const fontsUsed = new Set<string>()
-      const sizesUsed = new Set<string>()
+    const fontsUsed = new Set<string>()
+    const sizesUsed = new Set<string>()
 
-      for (const el of textElements) {
-        if (el.defaultFontName) fontsUsed.add(el.defaultFontName)
-        if (el.defaultSize) sizesUsed.add(el.defaultSize)
+    for (const el of textElements) {
+      if (el.defaultFontName) fontsUsed.add(el.defaultFontName)
+      if (el.defaultSize) sizesUsed.add(el.defaultSize)
+      if (el.fontSizes) {
+        el.fontSizes.forEach(size => sizesUsed.add(size))
+        if (el.fontSizes.length > 1) {
+          issues.push(`Text element ${el.id} has mixed font sizes internally (${el.fontSizes.join(', ')}). Consider standardizing to a single font size.`)
+        }
       }
+    }
 
+    if (textElements.length > 1) {
       if (fontsUsed.size > this.maxFamilies) {
         issues.push(`Slide uses ${fontsUsed.size} different font families: ${Array.from(fontsUsed).join(', ')}. Consider reducing to 1 or 2 for consistency.`)
       }

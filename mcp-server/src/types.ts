@@ -27,6 +27,8 @@ export interface SerializedElement {
   defaultColor?: string    // Default text color, if text element
   defaultFontName?: string // Font family name, if text element
   defaultSize?: string     // Font size, if text element
+  fontSizes?: number[]     // Distinct px sizes found in the text HTML, most frequent first
+  textAlign?: string       // Dominant paragraph alignment: left | center | right | justify
 }
 
 export interface SerializedSlide {

@@ -18,8 +18,9 @@ import useAlignActiveElement from '@/hooks/useAlignActiveElement'
 import useDeleteElement from '@/hooks/useDeleteElement'
 import useAddSlidesOrElements from '@/hooks/useAddSlidesOrElements'
 import emitter, { EmitterEvents } from '@/utils/emitter'
-import type { PPTElement } from '@/types/slides'
+import type { PPTElement, PPTTextElement } from '@/types/slides'
 import { recordAction } from './actionHistory'
+import { applyFontSize, applyTextAlign } from '@/utils/textMetrics'
 
 /**
  * Represents one step in a predicted action's execution sequence.
@@ -66,9 +67,42 @@ export function useStepExecutor() {
     strikethrough: () => emitRichText('strikethrough'),
     fontSizeUp: () => emitRichText('fontsize-add'),
     fontSizeDown: () => emitRichText('fontsize-reduce'),
+    setTextSize: (args) => {
+      const el = getEl()
+      if (el && el.type === 'text' && args?.size) {
+        const size = Number(args.size)
+        if (!isNaN(size)) {
+          const content = applyFontSize((el as PPTTextElement).content, size)
+          slidesStore.updateElement({ id: el.id, props: { content } })
+        }
+      }
+    },
     changeTextColor: (args) => {
       const color = (args?.color as string) ?? '#e2534d'
       emitRichText('color', color)
+    },
+
+    // ── Text Alignment ─────────────────────────────────────────
+    textAlignLeft: () => {
+      const el = getEl()
+      if (el && el.type === 'text') {
+        const content = applyTextAlign((el as PPTTextElement).content, 'left')
+        slidesStore.updateElement({ id: el.id, props: { content } })
+      }
+    },
+    textAlignCenter: () => {
+      const el = getEl()
+      if (el && el.type === 'text') {
+        const content = applyTextAlign((el as PPTTextElement).content, 'center')
+        slidesStore.updateElement({ id: el.id, props: { content } })
+      }
+    },
+    textAlignRight: () => {
+      const el = getEl()
+      if (el && el.type === 'text') {
+        const content = applyTextAlign((el as PPTTextElement).content, 'right')
+        slidesStore.updateElement({ id: el.id, props: { content } })
+      }
     },
 
     // ── Alignment ──────────────────────────────────────────────

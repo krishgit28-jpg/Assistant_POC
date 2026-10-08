@@ -61,6 +61,31 @@ const STORE_LEVEL_ACTIONS: ActionDescriptor[] = [
     description: 'Align the active selection (group) to its left-most element.',
     applicableTo: ['any'],
   },
+  {
+    id: 'textAlignLeft',
+    label: 'Text Align Left',
+    description: 'Left-align the text in the selected text element.',
+    applicableTo: ['text'],
+  },
+  {
+    id: 'textAlignCenter',
+    label: 'Text Align Center',
+    description: 'Center-align the text in the selected text element.',
+    applicableTo: ['text'],
+  },
+  {
+    id: 'textAlignRight',
+    label: 'Text Align Right',
+    description: 'Right-align the text in the selected text element.',
+    applicableTo: ['text'],
+  },
+  {
+    id: 'setTextSize',
+    label: 'Set Text Size',
+    description: 'Set the uniform font size for the selected text element (e.g. 18).',
+    applicableTo: ['text'],
+    argsSchema: { type: 'object', required: ['size'], properties: { size: { type: 'number' } } },
+  },
 ]
 
 function describeActions(executor: StepExecutor): ActionDescriptor[] {

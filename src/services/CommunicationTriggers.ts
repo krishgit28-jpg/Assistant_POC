@@ -1,6 +1,7 @@
 import { useSlidesStore, useMainStore } from '@/store'
 import { getHistory } from '@/services/actionHistory'
 import type { CanvasElement, CanvasState, HistoryEntry, StateSupplier, Unsubscribe } from '@pptist/sdk'
+import { extractFontSizes, extractTextAlign } from '@/utils/textMetrics'
 
 type StateListener = (snapshot: CanvasState) => void
 
@@ -126,6 +127,8 @@ export class CommunicationTriggers implements StateSupplier<CanvasState> {
         defaultFontName: el.defaultFontName,
         defaultSize: el.defaultSize,
         content: String(el.content).replace(/<[^>]*>/g, '').slice(0, contentLimit),
+        fontSizes: extractFontSizes(el.content),
+        textAlign: extractTextAlign(el.content),
       } : {}),
     })
 

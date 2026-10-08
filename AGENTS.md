@@ -216,7 +216,8 @@ Available after ingestion. Agents can push up to 5 predictions back to the front
 
 **Available Step Commands for `action_sequence`** (Handled in `src/services/stepExecutor.ts`):
 - **Rich Text**: `bold`, `italic`, `underline`, `strikethrough`, `fontSizeUp`, `fontSizeDown`, `changeTextColor`
-- **Alignment**: `alignLeft`, `alignCenter`, `alignRight`, `alignTop`, `alignVertical`, `alignBottom`, `alignGroupLeft`
+- **Text Alignment / Formatting**: `textAlignLeft`, `textAlignCenter`, `textAlignRight`, `setTextSize` (requires `size` arg)
+- **Canvas Alignment**: `alignLeft`, `alignCenter`, `alignRight`, `alignTop`, `alignVertical`, `alignBottom`, `alignGroupLeft`
 - **Layering**: `bringToFront`, `sendToBack`, `bringForward`, `sendBackward`
 - **Common**: `duplicate`, `deleteEl`
 - **Image**: `flipHorizontal`, `flipVertical`, `fitToSlide`

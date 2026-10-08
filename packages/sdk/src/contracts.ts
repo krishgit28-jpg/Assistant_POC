@@ -21,6 +21,10 @@ export interface CanvasElement {
   defaultColor?: string
   defaultFontName?: string
   defaultSize?: string
+  /** Distinct font sizes (px) found in the text, most frequent first. Text elements only. */
+  fontSizes?: number[]
+  /** Dominant paragraph alignment (`left` | `center` | `right` | `justify`). Text elements only. */
+  textAlign?: string
 }
 
 export interface CanvasSlide<E extends CanvasElement = CanvasElement> {

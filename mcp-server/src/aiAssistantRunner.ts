@@ -1,6 +1,15 @@
+import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+
+// Load GEMINI_API_KEY from the repo-root .env (variables already set in the shell win).
+try {
+  process.loadEnvFile(fileURLToPath(new URL('../../.env', import.meta.url)))
+}
+catch {
+  // No .env file — rely on the shell environment.
+}
 
 interface PredictedStep {
   command:
@@ -29,10 +38,13 @@ interface PredictedStep {
   | 'editChartData'
   | 'insertTableRow'
   | 'insertTableCol'
-  | 'deleteTableRow'
   | 'deleteTableCol'
   | 'updateElement'
   | 'addElement'
+  | 'textAlignLeft'
+  | 'textAlignCenter'
+  | 'textAlignRight'
+  | 'setTextSize'
   args?: Record<string, unknown>
 }
 
@@ -57,6 +69,7 @@ SUGGESTION TYPES:
 VALID COMMANDS for action_sequence steps:
 bold, italic, underline, strikethrough, fontSizeUp, fontSizeDown, changeTextColor,
 alignLeft, alignCenter, alignRight, alignTop, alignVertical, alignBottom, alignGroupLeft,
+textAlignLeft, textAlignCenter, textAlignRight, setTextSize,
 bringToFront, sendToBack, bringForward, sendBackward, duplicate, deleteEl,
 flipHorizontal, flipVertical, fitToSlide, updateElement, addElement
 
@@ -75,7 +88,7 @@ Return ONLY a valid JSON array of objects matching this schema (do NOT wrap in m
 ]
 
 CRITICAL STRATEGY: 
-If the 'insights' object contains alignmentIssues or contrastIssues, your #1 suggestion MUST be a sequence to fix them!`
+If the 'insights' object contains alignmentIssues, contrastIssues, or fontConsistency issues, your #1 suggestion MUST be a sequence to fix them using alignment or font size commands!`
 
 async function generateSmartPredictions(context: any): Promise<AiSuggestion[]> {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY_HERE'
