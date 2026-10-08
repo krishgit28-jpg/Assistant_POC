@@ -16,7 +16,7 @@
 import http from 'node:http'
 import type { CanvasState } from '@pptist/sdk'
 import type { MCPPayload } from './types.js'
-import { updateState, getLatestSuggestions } from './stateStore.js'
+import { updateState, getLatestSuggestions, updateSuggestions } from './stateStore.js'
 import { notifyContextUpdated, type ServerRuntime } from './mcpServer.js'
 import { ClientSpecsSchema } from './clientSpecs.js'
 import { resolveCommand, takePendingCommands } from './commandQueue.js'
@@ -162,6 +162,21 @@ export function startHttpServer(runtime: ServerRuntime): http.Server {
       console.error(`[HTTP] 📤 Browser fetched suggestions. Returning ${suggestions.suggestions.length} items.`)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(suggestions))
+      return
+    }
+
+    // POST /suggestions — manually push suggestions into the store (useful for test scripts & curl)
+    if (req.method === 'POST' && req.url === '/suggestions') {
+      try {
+        const body = JSON.parse(await readBody(req))
+        const list = Array.isArray(body) ? body : (body.suggestions ?? [])
+        updateSuggestions(list)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok', count: list.length }))
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+      }
       return
     }
 
