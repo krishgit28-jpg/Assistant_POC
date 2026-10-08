@@ -1,10 +1,21 @@
 import { useSlidesStore, useMainStore } from '@/store'
 import { getHistory } from '@/services/actionHistory'
+import type { CanvasElement, CanvasState, HistoryEntry, StateSupplier, Unsubscribe } from '@pptist/sdk'
 
-export class CommunicationTriggers {
+type StateListener = (snapshot: CanvasState) => void
+
+/**
+ * PPTist's StateSupplier.
+ *
+ * Watches the Pinia stores for meaningful user actions (select, move, edit, insert,
+ * delete) and emits a debounced, serialized `CanvasState` snapshot to its listeners.
+ * It does NOT talk to the network — the SDK's `McpBridgeClient` subscribes to it.
+ */
+export class CommunicationTriggers implements StateSupplier<CanvasState> {
   // Store the unsubscribe functions so we can clean up if needed
   private unsubscribeSlides: (() => void) | null = null
   private unsubscribeMain: (() => void) | null = null
+  private listeners = new Set<StateListener>()
 
   /**
    * The "Watcher": Subscribes to store actions and calls the trigger.
@@ -43,6 +54,31 @@ export class CommunicationTriggers {
   public stopWatching() {
     if (this.unsubscribeSlides) this.unsubscribeSlides()
     if (this.unsubscribeMain) this.unsubscribeMain()
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+  }
+
+  // ── StateSupplier contract ─────────────────────────────────────────────────
+
+  public subscribe(listener: StateListener): Unsubscribe {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  public getSnapshot(trigger = 'snapshot'): CanvasState {
+    const slidesStore = useSlidesStore()
+    const mainStore = useMainStore()
+
+    return this.serialize({
+      trigger,
+      selection: mainStore.activeElementList,
+      slide: slidesStore.currentSlide,
+      // getHistory() returns most recent first
+      history: getHistory().slice(0, 5),
+      viewport: {
+        width: slidesStore.viewportSize,
+        height: slidesStore.viewportSize * slidesStore.viewportRatio,
+      },
+    })
   }
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -58,30 +94,9 @@ export class CommunicationTriggers {
     // Debounce for 1.5 seconds. This prevents spamming the LLM
     // when the user is continuously dragging or resizing an element.
     this.debounceTimer = setTimeout(() => {
-      const slidesStore = useSlidesStore()
-      const mainStore = useMainStore()
-  
-      // 1. Current Selection (The actual element objects currently selected)
-      const currentSelection = mainStore.activeElementList
-      
-      // 2. Current Slide State
-      const currentSlide = slidesStore.currentSlide
-  
-      // 3. Last 5 Actions (getHistory() returns most recent first)
-      const last5Actions = getHistory().slice(0, 5)
-  
-      const mcpPayload = {
-        triggerAction: actionName,
-        currentSelection,
-        currentSlide,
-        last5Actions
-      }
-  
-      // Log the payload so we can inspect it in the browser console
-      console.log(`[CommunicationTriggers] Data prepared for MCP Bridge (Triggered by ${actionName}):`, mcpPayload)
-      
-      // Send to the MCP Bridge server
-      this.sendToMCPBridge(mcpPayload)
+      const snapshot = this.getSnapshot(actionName)
+      console.log(`[CommunicationTriggers] State snapshot ready (Triggered by ${actionName}):`, snapshot)
+      this.listeners.forEach(listener => listener(snapshot))
     }, 1500)
   }
 
@@ -89,11 +104,16 @@ export class CommunicationTriggers {
    * Serialize raw Pinia Proxy objects into plain, compact JSON
    * that can be safely sent over HTTP.
    */
-  private serializePayload(payload: any): object {
+  private serialize(raw: {
+    trigger: string
+    selection: any[]
+    slide: any
+    history: any[]
+    viewport: { width: number; height: number }
+  }): CanvasState {
     const now = Date.now()
 
-    // Serialize selected elements — only what's needed to identify them
-    const currentSelection = (payload.currentSelection || []).map((el: any) => ({
+    const compressElement = (el: any, contentLimit: number): CanvasElement => ({
       id: el.id,
       type: el.type,
       left: Math.round(el.left ?? 0),
@@ -101,80 +121,36 @@ export class CommunicationTriggers {
       width: Math.round(el.width ?? 0),
       height: Math.round(el.height ?? 0),
       ...(el.fill ? { fill: el.fill } : {}),
-      ...(el.type === 'text' ? { 
+      ...(el.type === 'text' ? {
         defaultColor: el.defaultColor,
         defaultFontName: el.defaultFontName,
         defaultSize: el.defaultSize,
-        content: String(el.content).replace(/<[^>]*>/g, '').slice(0, 100)
+        content: String(el.content).replace(/<[^>]*>/g, '').slice(0, contentLimit),
       } : {}),
-    }))
+    })
 
-    // Serialize slide — include geometry and colors of all elements for alignment/contrast detection
-    const slide = payload.currentSlide
-    const elements = slide?.elements || []
-    
-    const compressedElements = elements.map((el: any) => ({
-      id: el.id,
-      type: el.type,
-      left: Math.round(el.left ?? 0),
-      top: Math.round(el.top ?? 0),
-      width: Math.round(el.width ?? 0),
-      height: Math.round(el.height ?? 0),
-      ...(el.fill ? { fill: el.fill } : {}),
-      ...(el.type === 'text' ? { 
-        defaultColor: el.defaultColor,
-        defaultFontName: el.defaultFontName,
-        defaultSize: el.defaultSize,
-        content: String(el.content).replace(/<[^>]*>/g, '').slice(0, 40)
-      } : {}),
-    }))
+    const slide = raw.slide
+    const background = slide?.background?.type === 'solid' ? slide?.background?.color : slide?.background?.type
 
-    // const currentSlide = {
-    //   id: slide?.id ?? '',
-    //   background: slide?.background?.type === 'solid' ? slide?.background?.color : slide?.background?.type,
-    //   elements: compressedElements,
-    // }
-
-    // Serialize actions — keep details that help AI understand the action (skip timestamps)
-    const last5Actions = (payload.last5Actions || []).map((a: any) => ({
+    // Serialize actions — keep details that help the AI understand the action
+    const history: HistoryEntry[] = raw.history.map((a: any) => ({
       type: a.type,
       targetType: a.targetType,
       ...(a.targetId ? { targetId: a.targetId } : {}),
+      ...(typeof a.timestamp === 'number' ? { secondsAgo: Math.max(0, Math.round((now - a.timestamp) / 1000)) } : {}),
       ...(a.details ? { details: a.details } : {}),
     }))
 
     return {
-      triggerAction: payload.triggerAction,
-      currentSelection,
-      // currentSlide,
-      last5Actions,
-    }
-  }
-
-  /**
-   * POST the serialized payload to the MCP Bridge HTTP server.
-   * Silently fails if the server is not running — the app should never break.
-   */
-  private async sendToMCPBridge(payload: any) {
-    try {
-      const serialized = this.serializePayload(payload)
-
-      const response = await fetch('http://localhost:3100/context', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serialized),
-        signal: AbortSignal.timeout(2000), // 2s timeout
-      })
-
-      if (response.ok) {
-        console.log('[CommunicationTriggers] ✅ Context sent to MCP server')
-      }
-      else {
-        console.warn(`[CommunicationTriggers] MCP server returned ${response.status}`)
-      }
-    }
-    catch {
-      // Silently ignore — MCP server may not be running
+      trigger: raw.trigger,
+      selection: raw.selection.map(el => compressElement(el, 100)),
+      slide: {
+        id: slide?.id ?? '',
+        ...(background ? { background } : {}),
+        viewport: raw.viewport,
+        elements: (slide?.elements || []).map((el: any) => compressElement(el, 40)),
+      },
+      history,
     }
   }
 }

@@ -14,19 +14,38 @@
  */
 
 import http from 'node:http'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { CanvasState } from '@pptist/sdk'
 import type { MCPPayload } from './types.js'
 import { updateState, getLatestSuggestions } from './stateStore.js'
-import { notifyContextUpdated } from './mcpServer.js'
+import { notifyContextUpdated, type ServerRuntime } from './mcpServer.js'
+import { ClientSpecsSchema } from './clientSpecs.js'
+import { resolveCommand, takePendingCommands } from './commandQueue.js'
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT ?? '3100', 10)
 
 /**
- * Start the HTTP server that receives browser context pushes
- * and serves AI predictions back to the browser.
- * Accepts the MCP server instance so it can trigger notifications.
+ * Normalise the body of POST /context into the server's internal payload.
+ * Accepts the SDK's CanvasState wire format and the legacy MCPPayload shape.
  */
-export function startHttpServer(mcpServer: McpServer): http.Server {
+function toPayload(body: Partial<CanvasState> & Partial<MCPPayload>): MCPPayload {
+  if (typeof body.trigger === 'string') {
+    return {
+      triggerAction: body.trigger,
+      currentSelection: body.selection ?? [],
+      currentSlide: body.slide ?? { id: '', elements: [] },
+      last5Actions: body.history ?? [],
+    }
+  }
+  return body as MCPPayload
+}
+
+/**
+ * Start the HTTP server that receives the SDK bridge's pushes (specs, state,
+ * command results) and serves suggestions and queued commands to the browser.
+ * Accepts the server runtime so it can ingest specs and trigger notifications.
+ */
+export function startHttpServer(runtime: ServerRuntime): http.Server {
+  const mcpServer = runtime.mcpServer
   const server = http.createServer(async (req, res) => {
     // CORS headers — allow browser fetch() from localhost:5173
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -40,12 +59,61 @@ export function startHttpServer(mcpServer: McpServer): http.Server {
       return
     }
 
-    // POST /context — receive payload from CommunicationTriggers
+    // POST /specs — SchemaSupplier pushes the host app's specs; ingesting them
+    // switches the server to operational mode and emits tools/list_changed.
+    if (req.method === 'POST' && req.url === '/specs') {
+      try {
+        const parsed = ClientSpecsSchema.safeParse(JSON.parse(await readBody(req)))
+        if (!parsed.success) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid client specs', issues: parsed.error.issues }))
+          return
+        }
+        const result = runtime.tools.ingest(parsed.data)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok', ...result }))
+      }
+      catch (err) {
+        console.error('[HTTP] Failed to ingest specs:', err)
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+      }
+      return
+    }
+
+    // GET /commands — hand queued execute_canvas_action commands to the browser
+    if (req.method === 'GET' && req.url === '/commands') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ commands: takePendingCommands() }))
+      return
+    }
+
+    // POST /commands/result — browser reports the outcome of a command
+    if (req.method === 'POST' && req.url === '/commands/result') {
+      try {
+        const body = JSON.parse(await readBody(req)) as { requestId?: string; result?: { ok: boolean; error?: string } }
+        if (!body.requestId || !body.result) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Expected { requestId, result }' }))
+          return
+        }
+        const known = resolveCommand(body.requestId, body.result)
+        res.writeHead(known ? 200 : 404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: known ? 'ok' : 'unknown_request' }))
+      }
+      catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+      }
+      return
+    }
+
+    // POST /context — receive state pushed by the StateSupplier (via the SDK bridge)
     if (req.method === 'POST' && req.url === '/context') {
       console.error('[HTTP] 📥 Received POST /context from browser')
       try {
         const body = await readBody(req)
-        const payload: MCPPayload = JSON.parse(body)
+        const payload: MCPPayload = toPayload(JSON.parse(body))
         
         console.error(`[HTTP] Payload parsed. Trigger Action: ${payload.triggerAction}`)
         console.error(`[HTTP] Selected elements count: ${payload.currentSelection?.length || 0}`)
@@ -114,7 +182,10 @@ export function startHttpServer(mcpServer: McpServer): http.Server {
   const startListening = () => {
     server.listen(PORT, () => {
       console.error(`[HTTP] Listening on http://localhost:${PORT}`)
-      console.error(`[HTTP] POST /context         — receive browser context`)
+      console.error(`[HTTP] POST /specs           — ingest client specs (bootstrap → operational)`)
+      console.error(`[HTTP] POST /context         — receive browser state`)
+      console.error(`[HTTP] GET  /commands        — queued canvas commands for the browser`)
+      console.error(`[HTTP] POST /commands/result — command results from the browser`)
       console.error(`[HTTP] GET  /suggestions     — serve AI suggestions to browser`)
       console.error(`[HTTP] GET  /health          — health check`)
     })

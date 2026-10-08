@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build:sdk": "npm --prefix ../packages/sdk install && npm --prefix ../packages/sdk run build",
+    "build": "npm run build:sdk && tsc",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@pptist/sdk": "file:../packages/sdk",
+    "onnxruntime-node": "^1.30.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

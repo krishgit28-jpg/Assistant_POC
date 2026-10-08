@@ -32,6 +32,8 @@ export interface SerializedElement {
 export interface SerializedSlide {
   id: string
   background?: string
+  /** Logical canvas size in px, used to normalise geometry for ML. */
+  viewport?: { width: number; height: number }
   elements: SerializedElement[]
 }
 
@@ -39,7 +41,8 @@ export interface SerializedAction {
   type: string             // 'select' | 'insert' | 'delete' | 'update' | 'format' | ...
   targetType: string       // 'text' | 'image' | 'shape' | ...
   targetId?: string
-  secondsAgo: number
+  secondsAgo?: number
+  details?: Record<string, unknown>
 }
 
 // ── What OpenClaw sends back to the frontend via the MCP tool ────────────────

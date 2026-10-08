@@ -20,24 +20,26 @@ import { createMcpServer } from './mcpServer.js'
 import { startHttpServer } from './httpServer.js'
 
 async function main() {
-  // 1. Create the MCP server (with resource + tool definitions)
-  console.error('[Main] Creating MCP server...')
-  const mcpServer = createMcpServer()
+  // 1. Create the MCP server in bootstrap mode (resource + configuration tools only)
+  console.error('[Main] Creating MCP server (bootstrap mode)...')
+  const runtime = createMcpServer()
 
-  // 2. Start the HTTP server, passing the MCP server so it can send notifications
+  // 2. Start the HTTP server; it ingests client specs and sends MCP notifications
   console.error('[Main] Starting HTTP server...')
-  startHttpServer(mcpServer)
+  startHttpServer(runtime)
 
   // 3. Connect the MCP server to stdio for OpenClaw communication
   console.error('[Main] Connecting MCP server to stdio transport...')
   const transport = new StdioServerTransport()
-  await mcpServer.connect(transport)
+  await runtime.mcpServer.connect(transport)
 
-  console.error('[Main] PPTist MCP Server is ready!')
-  console.error('[Main] - HTTP: POST http://localhost:3100/context (browser pushes)')
-  console.error('[Main] - HTTP: GET  http://localhost:3100/predictions (browser fetches AI predictions)')
+  console.error('[Main] PPTist MCP Server is ready (bootstrap mode)!')
+  console.error('[Main] - Bootstrap tools: ingest_client_specs, register_dynamic_tool, get_server_status')
+  console.error('[Main] - HTTP: POST http://localhost:3100/specs (client SchemaSupplier → generates operational tools)')
+  console.error('[Main] - HTTP: POST http://localhost:3100/context (client StateSupplier pushes)')
+  console.error('[Main] - HTTP: GET  http://localhost:3100/suggestions (browser fetches AI suggestions)')
   console.error('[Main] - MCP Resource: pptist://context/live (subscribe for live updates)')
-  console.error('[Main] - MCP Tools: get_current_context, get_server_status, send_predicted_actions')
+  console.error('[Main] - After ingestion: send_ai_suggestions, execute_canvas_action, get_current_context, describe_client_capabilities')
 }
 
 main().catch((err) => {

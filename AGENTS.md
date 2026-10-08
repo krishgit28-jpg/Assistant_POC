@@ -170,21 +170,75 @@ For individual element previews, you can also use `<ThumbnailElement :elementInf
 To fire custom logic instantly when the user performs specific actions (like selecting an element, deleting a slide, or modifying shapes), the `CommunicationTriggers` class is used. It safely hooks into Pinia's `$onAction` and operates without polluting the global event bus.
 
 **Relevant Files:**
-- `src/services/CommunicationTriggers.ts`: Houses the watcher and payload generation logic.
-- `src/App.vue`: Initializes the watcher globally during the `onMounted` lifecycle hook.
+- `src/services/CommunicationTriggers.ts`: PPTist's **`StateSupplier`** — watches the stores and emits debounced `CanvasState` snapshots to subscribers (it no longer does any HTTP itself).
+- `src/App.vue`: Creates the suppliers and starts the SDK `McpBridgeClient` during `onMounted`.
 
 ```typescript
 import { CommunicationTriggers } from '@/services/CommunicationTriggers'
 
-// Initialized in App.vue using the global Pinia instance
-const commTriggers = new CommunicationTriggers(piniaInstance)
+const stateSupplier = new CommunicationTriggers()
 
 // Starts intercepting user actions (e.g., setActiveElementIdList, updateElement)
-commTriggers.startWatching()
+stateSupplier.startWatching()
 
-// When an action occurs, it prepares an MCP Payload containing:
-// 1. Current Selection (mainStore.activeElementList)
-// 2. Current Slide State (slidesStore.currentSlide)
-// 3. Last 5 Actions (getHistory().slice(0, 5))
+// Subscribe to debounced snapshots (the SDK bridge does this for you)
+const off = stateSupplier.subscribe(snapshot => {
+  // snapshot: { trigger, selection, slide (all elements + viewport), history (last 5) }
+})
 ```
-*Note: The triggers use a `Promise.resolve().then(...)` microtask to ensure that the underlying store mutations and `actionHistory` updates have completely finished before the trigger fires.*
+*Note: Emissions are debounced by 1.5s so dragging/resizing doesn't spam the AI.*
+
+## 8. MCP Server & AI Action Integration
+**Directly Available API:** Yes, via the `pptist-mcp-server` (`mcp-server/src/mcpServer.ts`).
+
+The project runs an MCP server that provides AI agents direct access to the live PPTist editor context and allows pushing AI-predicted UI actions back into the editor.
+
+**Server lifecycle (bootstrap → operational):**
+1. **Bootstrap mode** — the server exposes only configuration tools: `ingest_client_specs`, `register_dynamic_tool`, `get_server_status`.
+2. **Ingest** — the PPTist `SchemaSupplier` specs arrive via `POST /specs` (or the `ingest_client_specs` tool).
+3. **Operational mode** — tools are generated from the specs (`mcp-server/src/dynamicTools.ts`): `send_ai_suggestions`, `execute_canvas_action`, `get_current_context`, `describe_client_capabilities`. The server emits `notifications/tools/list_changed` so the MCP client re-indexes. Command enums are built from the ingested action list.
+
+**Key Components:**
+
+### A. Live Context Resource (`pptist://context/live`)
+Agents should **subscribe** to the `pptist://context/live` resource. Every time the user interacts with the editor (emitted by the `StateSupplier`), the server pushes an update notification. The payload contains:
+- `currentSelection` (active elements)
+- `currentSlide` (the entire slide layout)
+- `recentActions` (last 5 commands executed)
+- `insights` — merged output of the analyzer pipeline (see D)
+
+### B. Sending AI Suggestions (`send_ai_suggestions` Tool)
+Available after ingestion. Agents can push up to 5 predictions back to the frontend. Suggestions can be of two types:
+1. **`action_sequence`**: Executes a sequence of smaller commands.
+2. **`design_option`**: Complete state update of the slide elements.
+
+`execute_canvas_action` (`command`, `args?`, `targetId?`) runs one command immediately: the server queues it, the SDK bridge polls `GET /commands`, runs it through the `ActionSupplier` and reports back via `POST /commands/result`. `register_dynamic_tool` can expose any single client command as its own named tool.
+
+**Available Step Commands for `action_sequence`** (Handled in `src/services/stepExecutor.ts`):
+- **Rich Text**: `bold`, `italic`, `underline`, `strikethrough`, `fontSizeUp`, `fontSizeDown`, `changeTextColor`
+- **Alignment**: `alignLeft`, `alignCenter`, `alignRight`, `alignTop`, `alignVertical`, `alignBottom`, `alignGroupLeft`
+- **Layering**: `bringToFront`, `sendToBack`, `bringForward`, `sendBackward`
+- **Common**: `duplicate`, `deleteEl`
+- **Image**: `flipHorizontal`, `flipVertical`, `fitToSlide`
+- **Chart**: `editChartData`
+- **Table**: `insertTableRow`, `insertTableCol`, `deleteTableRow`, `deleteTableCol`
+- **Store-Level Operations** (requires `args`):
+  - `updateElement` (requires `id` and `props`)
+  - `addElement` (requires full element data object)
+  - `updateTextContent` (requires `text`)
+  - `generateSubtitle` (requires `text`)
+
+### C. Supplier SDK (`packages/sdk`, import as `@pptist/sdk`)
+The host app plugs into the server by implementing three interfaces from `packages/sdk/src/suppliers.ts` and handing them to `McpBridgeClient` (no hand-written HTTP):
+- `StateSupplier<T>` — `getSnapshot()` / `subscribe()`; PPTist: `CommunicationTriggers`.
+- `ActionSupplier<A>` — `listActions()` / `execute(command, args, { targetId })`; PPTist: `createPPTistActionSupplier` (`src/services/pptistSuppliers.ts`, wraps `useStepExecutor`).
+- `SchemaSupplier` — `getSpecs()` returning docs, JSON schemas, capabilities and actions; PPTist: `createPPTistSchemaSupplier`.
+
+The frontend resolves the SDK via the `@pptist/sdk` alias (vite + `tsconfig.app.json`); the server consumes the built package (`file:../packages/sdk`, run `npm run build:sdk` in `mcp-server`).
+
+### D. Analyzer Pipeline (`mcp-server/src/analyzers.ts`)
+`AnalyzerPipeline` runs pluggable `ContextAnalyzer` modules (`mcp-server/src/analyzerModules/`) and merges results into `insights`:
+- `alignment` (nearly-aligned pairs, default ≤5px), `contrast` (luminance vs white), `fontConsistency` — heuristics, on the selection.
+- `mlLayout` — `insights.ml`: per-element role (title/body/media/decoration), slide `layoutClass` and `hierarchyIssues`, from bounding boxes. Uses `onnxruntime-node` with `mcp-server/models/layout-classifier.onnx` (or `PPTIST_ONNX_MODEL`); model contract: float32 `[N,8]` features → `[N,4]` logits. If weights are missing/invalid it falls back to a mock classifier (`ml.source: "mock"`).
+
+Verify the whole loop with `npx tsx scripts/smoke-test.ts` in `mcp-server`.

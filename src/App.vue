@@ -8,7 +8,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, getCurrentInstance } from 'vue'
+import { onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { nanoid } from 'nanoid'
 import { useScreenStore, useMainStore, useSnapshotStore, useSlidesStore } from '@/store'
@@ -18,6 +18,9 @@ import { isPC } from '@/utils/common'
 import api from '@/services'
 import { initActionHistory } from '@/services/actionHistory'
 import { CommunicationTriggers } from '@/services/CommunicationTriggers'
+import { useStepExecutor } from '@/services/stepExecutor'
+import { createPPTistActionSupplier, createPPTistSchemaSupplier } from '@/services/pptistSuppliers'
+import { McpBridgeClient } from '@pptist/sdk'
 
 import Editor from './views/Editor/index.vue'
 import Screen from './views/Screen/index.vue'
@@ -35,6 +38,17 @@ const { slides } = storeToRefs(slidesStore)
 const { screening } = storeToRefs(screenStore)
 
 const isAudienceMode = new URLSearchParams(window.location.search).get('mode') === 'audience'
+
+// Supplier implementations handed to the SDK bridge (must be created in setup context)
+const stateSupplier = new CommunicationTriggers()
+const actionSupplier = createPPTistActionSupplier(useStepExecutor())
+const schemaSupplier = createPPTistSchemaSupplier(actionSupplier)
+const mcpBridge = new McpBridgeClient({
+  baseUrl: 'http://localhost:3100',
+  state: stateSupplier,
+  actions: actionSupplier,
+  schema: schemaSupplier,
+})
 
 if (import.meta.env.MODE !== 'development') {
   window.onbeforeunload = () => false
@@ -59,9 +73,16 @@ onMounted(async () => {
   // Initialize the AI action history recorder (non-blocking, purely observational)
   initActionHistory()
 
-  // Initialize our custom communication triggers (uses stores directly, no pinia arg needed)
-  const commTriggers = new CommunicationTriggers()
-  commTriggers.startWatching()
+  // Start the StateSupplier watcher, then connect the suppliers to the MCP server via the SDK bridge.
+  // The bridge ingests the SchemaSupplier specs, forwards state, and runs server-queued actions;
+  // it silently retries in the background if the MCP server is not running.
+  stateSupplier.startWatching()
+  mcpBridge.start()
+})
+
+onBeforeUnmount(() => {
+  mcpBridge.stop()
+  stateSupplier.stopWatching()
 })
 
 // 应用注销时向 localStorage 中记录下本次 indexedDB 的数据库ID，用于之后清除数据库

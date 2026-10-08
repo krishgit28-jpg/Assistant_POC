@@ -32,7 +32,7 @@ async function main() {
       const result = await client.readResource({ uri })
       
       const content = result.contents[0]
-      if (content.mimeType === 'application/json' && content.text) {
+      if (content.mimeType === 'application/json' && 'text' in content && content.text) {
         // Parse and pretty-print the JSON
         const parsed = JSON.parse(content.text)
         console.log('📦 [Test Client] Fresh context received:')
