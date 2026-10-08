@@ -141,7 +141,7 @@ async function main() {
 
   const transport = new StdioClientTransport({
     command: 'npx',
-    args: ['tsx', 'mcp-server/src/index.ts'],
+    args: ['tsx', '../mcp-server/src/index.ts'],
     stderr: 'inherit',
   })
 
