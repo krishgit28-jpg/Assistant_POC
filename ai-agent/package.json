@@ -1,7 +1,7 @@
 {
   "name": "ai-agent",
   "version": "1.0.0",
-  "description": "AI Assistant for PPTist using MCP",
+  "description": "Generic AI Assistant using MCP",
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",

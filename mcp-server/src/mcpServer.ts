@@ -27,7 +27,7 @@ import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextp
 import { buildLiveContext } from './contextView.js'
 import { DynamicToolManager } from './dynamicTools.js'
 
-const LIVE_CONTEXT_URI = 'pptist://context/live'
+const LIVE_CONTEXT_URI = 'app://context/live'
 
 export interface ServerRuntime {
   mcpServer: McpServer
@@ -40,7 +40,7 @@ export interface ServerRuntime {
 export function createMcpServer(): ServerRuntime {
   const server = new McpServer(
     {
-      name: 'pptist-mcp-server',
+      name: 'app-mcp-server',
       version: '2.0.0',
     },
     {
